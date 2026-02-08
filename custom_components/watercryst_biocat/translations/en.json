@@ -1,108 +1,74 @@
 {
-  "config": {
-    "step": {
-      "user": {
-        "title": "Watercryst BIOCAT Login",
-        "description": "Enter your Watercryst account credentials to connect your BIOCAT device.\n\n![BIOCAT Device]({device_image})",
-        "data": {
-          "username": "Username",
-          "password": "Password"
+    "config": {
+        "step": {
+            "user": {
+                "title": "Set up Watercryst BIOCAT",
+                "description": "Enter your API key. You can find it at {api_key_url}",
+                "data": {
+                    "api_key": "API Key",
+                    "device_name": "Device name"
+                },
+                "data_description": {
+                    "api_key": "Find your API key at app.watercryst.com/Device/",
+                    "device_name": "Custom name for the device"
+                }
+            },
+            "reauth_confirm": {
+                "title": "Re-authenticate",
+                "description": "The API key is invalid. Please enter a new API key. You can find it at {api_key_url}",
+                "data": {
+                    "api_key": "New API Key"
+                }
+            }
         },
-        "data_description": {
-          "username": "Your Watercryst account email address",
-          "password": "Your Watercryst account password"
+        "error": {
+            "invalid_auth": "Invalid API key. Please check at app.watercryst.com/Device/.",
+            "cannot_connect": "Could not connect to the Watercryst API.",
+            "unknown": "Unknown error."
+        },
+        "abort": {
+            "already_configured": "This device is already configured.",
+            "reauth_successful": "API key successfully updated."
         }
-      },
-      "reauth_confirm": {
-        "title": "Re-authenticate Watercryst BIOCAT",
-        "description": "Your credentials have expired. Please enter your updated login details.",
-        "data": {
-          "username": "Username",
-          "password": "Password"
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "Settings",
+                "data": {
+                    "poll_interval": "Polling interval (seconds)"
+                },
+                "data_description": {
+                    "poll_interval": "How often should data be fetched? (10-300 seconds, default: 30)"
+                }
+            }
         }
-      }
     },
-    "error": {
-      "invalid_auth": "Invalid username or password. Please check your credentials.",
-      "cannot_connect": "Unable to connect to the Watercryst API. Please check your internet connection.",
-      "unknown": "An unexpected error occurred. Please try again."
-    },
-    "abort": {
-      "already_configured": "This Watercryst account is already configured.",
-      "reauth_successful": "Re-authentication was successful."
+    "entity": {
+        "sensor": {
+            "water_temperature": { "name": "Water temperature" },
+            "water_pressure": { "name": "Water pressure" },
+            "last_tap_volume": { "name": "Last tap volume" },
+            "last_tap_duration": { "name": "Last tap duration" },
+            "consumption_daily": { "name": "Daily consumption" },
+            "consumption_weekly": { "name": "Weekly consumption" },
+            "consumption_monthly": { "name": "Monthly consumption" },
+            "operation_mode": { "name": "Operation mode" }
+        },
+        "binary_sensor": {
+            "device_online": { "name": "Device online" },
+            "absence_mode_active": { "name": "Absence mode active" },
+            "leakage_detected": { "name": "Leakage detected" },
+            "device_error": { "name": "Device error" },
+            "device_warning": { "name": "Device warning" }
+        },
+        "switch": {
+            "absence_mode": { "name": "Absence mode" },
+            "leakage_protection": { "name": "Leakage protection" }
+        },
+        "button": {
+            "start_selftest": { "name": "Start self-test" },
+            "acknowledge_warning": { "name": "Acknowledge warning" }
+        }
     }
-  },
-  "entity": {
-    "sensor": {
-      "water_pressure": {
-        "name": "Water Pressure"
-      },
-      "water_temperature": {
-        "name": "Water Temperature"
-      },
-      "water_hardness": {
-        "name": "Water Hardness"
-      },
-      "flow_rate": {
-        "name": "Flow Rate"
-      },
-      "total_consumption": {
-        "name": "Total Water Consumption"
-      },
-      "daily_consumption": {
-        "name": "Daily Water Consumption"
-      },
-      "selftest_result": {
-        "name": "Self-Test Result"
-      },
-      "selftest_last_run": {
-        "name": "Self-Test Last Run"
-      },
-      "leakage_last_run": {
-        "name": "Leakage Protection Last Run"
-      },
-      "device_state": {
-        "name": "Device State"
-      },
-      "error_message": {
-        "name": "Error Message"
-      },
-      "stat_weekly_consumption": {
-        "name": "Weekly Water Consumption"
-      },
-      "stat_monthly_consumption": {
-        "name": "Monthly Water Consumption"
-      }
-    },
-    "binary_sensor": {
-      "error_state": {
-        "name": "Error"
-      },
-      "warning_state": {
-        "name": "Warning"
-      },
-      "leakage_detected": {
-        "name": "Leakage Detected"
-      },
-      "connectivity": {
-        "name": "Device Connectivity"
-      }
-    },
-    "switch": {
-      "absence_mode": {
-        "name": "Absence Mode"
-      },
-      "leakage_protection": {
-        "name": "Leakage Protection"
-      }
-    },
-    "button": {
-      "start_selftest": {
-        "name": "Start Self-Test"
-      },
-      "acknowledge_warning": {
-        "name": "Acknowledge Warning"
-      }
-    }
-  }
 }

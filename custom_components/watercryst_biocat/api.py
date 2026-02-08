@@ -1,510 +1,436 @@
+"""API-Client für die Watercryst BIOCAT REST-API.
+
+Authentifizierung: X-API-KEY Header
+Basis-URL: https://appapi.watercryst.com
+Dokumentation: https://appapi.watercryst.com/api-v1.yaml
+
+Wichtig: Die API verträgt keine gleichzeitigen Requests.
+Zwischen Abfragen sollten mindestens 2-3 Sekunden liegen.
 """
-Asynchroner API-Client für die Watercryst BIOCAT Cloud-API.
-
-Dieser Client kapselt die gesamte Kommunikation mit der Watercryst-API.
-Er verwaltet die Authentifizierung (Login + Token-Refresh) und bietet
-Methoden für jeden API-Endpunkt. Alle Aufrufe sind vollständig asynchron
-(aiohttp), um den Home Assistant Event Loop nicht zu blockieren.
-
-Da kein Live-Zugriff auf die API besteht, sind die Endpunkte basierend
-auf REST-Standards simuliert. Die Datenstrukturen orientieren sich an
-typischen IoT-Geräte-APIs.
-"""
-
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
 import aiohttp
-import async_timeout
 
 from .const import (
     API_BASE_URL,
-    ENDPOINT_ABSENCE,
-    ENDPOINT_ACK_EVENT,
-    ENDPOINT_DEVICES,
+    API_HEADER_KEY,
+    ENDPOINT_ABSENCE_MODE,
+    ENDPOINT_ACKNOWLEDGE_WARNING,
     ENDPOINT_LEAKAGE_PROTECTION,
-    ENDPOINT_LOGIN,
     ENDPOINT_MEASUREMENTS,
-    ENDPOINT_ML_MEASUREMENT,
-    ENDPOINT_REFRESH,
     ENDPOINT_SELFTEST,
     ENDPOINT_STATE,
-    ENDPOINT_STATISTICS,
+    ENDPOINT_STATISTICS_DAILY,
+    ENDPOINT_STATISTICS_MONTHLY,
+    ENDPOINT_STATISTICS_WEEKLY,
     ENDPOINT_WATER_SUPPLY,
-    ENDPOINT_WEBHOOKS,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-# Timeout für einzelne API-Aufrufe (in Sekunden)
-REQUEST_TIMEOUT: int = 15
+# Minimale Pause zwischen API-Aufrufen (Sekunden)
+# Verhindert DoS / 429-Fehler bei der Watercryst API
+API_REQUEST_DELAY = 2.0
 
 
 class WatercrystApiError(Exception):
-    """Allgemeiner Fehler bei der Kommunikation mit der Watercryst-API."""
+    """Allgemeiner API-Fehler."""
 
 
 class WatercrystAuthError(WatercrystApiError):
-    """Fehler bei der Authentifizierung (ungültige Credentials oder abgelaufener Token)."""
+    """Authentifizierungs-Fehler (ungültiger API-Key)."""
 
 
 class WatercrystConnectionError(WatercrystApiError):
-    """Netzwerk- oder Verbindungsfehler zur API."""
+    """Verbindungs-Fehler."""
 
 
 class WatercrystApiClient:
-    """
-    Asynchroner Client für die Watercryst BIOCAT Cloud-API.
+    """Client für die Watercryst BIOCAT REST-API.
 
-    Verwaltet Authentifizierung, Token-Refresh und bietet Methoden
-    für alle relevanten API-Endpunkte.
+    Authentifizierung erfolgt über den X-API-KEY Header.
+    API-Keys werden unter https://app.watercryst.com/Device/ verwaltet.
     """
 
     def __init__(
         self,
         session: aiohttp.ClientSession,
-        username: str,
-        password: str,
+        api_key: str,
+        base_url: str = API_BASE_URL,
     ) -> None:
-        """
-        Initialisiert den API-Client.
+        """Initialisierung des API-Clients.
 
         Args:
-            session: Die aiohttp-Session (wird von Home Assistant bereitgestellt).
-            username: Benutzername für die Watercryst-API.
-            password: Passwort für die Watercryst-API.
+            session: aiohttp ClientSession für HTTP-Requests
+            api_key: Der X-API-KEY von app.watercryst.com/Device/
+            base_url: Basis-URL der API (Standard: https://appapi.watercryst.com)
         """
         self._session = session
-        self._username = username
-        self._password = password
-        self._access_token: str | None = None
-        self._refresh_token: str | None = None
-        self._device_id: str | None = None
-        self._base_url = API_BASE_URL
-
-    # ========================================================================
-    # Authentifizierung
-    # ========================================================================
-
-    async def authenticate(self) -> bool:
-        """
-        Führt den Login bei der Watercryst-API durch.
-
-        Sendet Benutzername und Passwort an den Login-Endpunkt
-        und speichert die erhaltenen Tokens.
-
-        Returns:
-            True bei erfolgreichem Login.
-
-        Raises:
-            WatercrystAuthError: Bei ungültigen Credentials.
-            WatercrystConnectionError: Bei Netzwerkfehlern.
-        """
-        _LOGGER.debug("Starte Authentifizierung bei der Watercryst-API")
-
-        payload = {
-            "username": self._username,
-            "password": self._password,
-        }
-
-        try:
-            data = await self._request("POST", ENDPOINT_LOGIN, json_data=payload, auth_required=False)
-        except WatercrystApiError as err:
-            _LOGGER.error("Authentifizierung fehlgeschlagen: %s", err)
-            raise WatercrystAuthError("Authentifizierung fehlgeschlagen") from err
-
-        # Tokens aus der API-Antwort extrahieren
-        self._access_token = data.get("access_token")
-        self._refresh_token = data.get("refresh_token")
-
-        if not self._access_token:
-            raise WatercrystAuthError("Kein Access-Token in der API-Antwort erhalten")
-
-        _LOGGER.info("Authentifizierung bei der Watercryst-API erfolgreich")
-        return True
-
-    async def refresh_access_token(self) -> bool:
-        """
-        Erneuert den Access-Token über den Refresh-Token.
-
-        Returns:
-            True bei erfolgreichem Refresh.
-
-        Raises:
-            WatercrystAuthError: Wenn der Refresh fehlschlägt.
-        """
-        if not self._refresh_token:
-            _LOGGER.warning("Kein Refresh-Token vorhanden, führe erneuten Login durch")
-            return await self.authenticate()
-
-        _LOGGER.debug("Erneuere Access-Token über Refresh-Endpunkt")
-
-        payload = {"refresh_token": self._refresh_token}
-
-        try:
-            data = await self._request("POST", ENDPOINT_REFRESH, json_data=payload, auth_required=False)
-            self._access_token = data.get("access_token")
-            self._refresh_token = data.get("refresh_token", self._refresh_token)
-            _LOGGER.debug("Access-Token erfolgreich erneuert")
-            return True
-        except WatercrystApiError:
-            _LOGGER.warning("Token-Refresh fehlgeschlagen, versuche erneuten Login")
-            return await self.authenticate()
-
-    # ========================================================================
-    # Geräte-Endpunkt
-    # ========================================================================
-
-    async def get_devices(self) -> list[dict[str, Any]]:
-        """
-        Ruft die Liste der registrierten Geräte ab.
-
-        Returns:
-            Liste von Geräte-Dictionarys mit ID, Name, Modell etc.
-        """
-        data = await self._request("GET", ENDPOINT_DEVICES)
-        devices = data.get("devices", [])
-        if devices and not self._device_id:
-            # Erstes Gerät als Standard-Gerät setzen
-            self._device_id = devices[0].get("id")
-            _LOGGER.debug("Standard-Gerät gesetzt: %s", self._device_id)
-        return devices
+        self._api_key = api_key
+        self._base_url = base_url.rstrip("/")
+        self._last_request_time: float = 0
+        self._request_lock = asyncio.Lock()
 
     @property
-    def device_id(self) -> str | None:
-        """Gibt die aktuelle Geräte-ID zurück."""
-        return self._device_id
-
-    @device_id.setter
-    def device_id(self, value: str) -> None:
-        """Setzt die Geräte-ID manuell."""
-        self._device_id = value
-
-    # ========================================================================
-    # Status & Warnungen
-    # ========================================================================
-
-    async def get_state(self) -> dict[str, Any]:
-        """
-        Ruft den aktuellen Gerätezustand ab (Fehler, Warnungen, Status).
-
-        Returns:
-            Dict mit Statusfeldern wie 'state', 'error', 'warning', 'error_message'.
-        """
-        return await self._request("GET", f"{ENDPOINT_STATE}/{self._device_id}")
-
-    async def acknowledge_event(self, event_id: str | None = None) -> dict[str, Any]:
-        """
-        Bestätigt (quittiert) eine Warnung oder einen Fehler.
-
-        Args:
-            event_id: Optionale ID des spezifischen Events. Ohne ID werden alle quittiert.
-
-        Returns:
-            API-Antwort nach der Bestätigung.
-        """
-        payload: dict[str, Any] = {"device_id": self._device_id}
-        if event_id:
-            payload["event_id"] = event_id
-        return await self._request("POST", ENDPOINT_ACK_EVENT, json_data=payload)
-
-    # ========================================================================
-    # Abwesenheitsmodus
-    # ========================================================================
-
-    async def get_absence(self) -> dict[str, Any]:
-        """
-        Ruft den aktuellen Abwesenheitsstatus ab.
-
-        Returns:
-            Dict mit 'active' (bool) und ggf. Zeitstempel.
-        """
-        return await self._request("GET", f"{ENDPOINT_ABSENCE}/{self._device_id}")
-
-    async def set_absence(self, active: bool) -> dict[str, Any]:
-        """
-        Setzt den Abwesenheitsmodus.
-
-        Args:
-            active: True = Abwesend, False = Anwesend.
-
-        Returns:
-            API-Antwort mit dem neuen Status.
-        """
-        payload = {"device_id": self._device_id, "active": active}
-        return await self._request("POST", ENDPOINT_ABSENCE, json_data=payload)
-
-    # ========================================================================
-    # Leckageschutz
-    # ========================================================================
-
-    async def get_leakage_protection(self) -> dict[str, Any]:
-        """
-        Ruft den Status des Leckageschutzes ab.
-
-        Returns:
-            Dict mit 'enabled' (bool), 'sensitivity', 'last_run' etc.
-        """
-        return await self._request("GET", f"{ENDPOINT_LEAKAGE_PROTECTION}/{self._device_id}")
-
-    async def set_leakage_protection(self, enabled: bool) -> dict[str, Any]:
-        """
-        Aktiviert oder deaktiviert den Leckageschutz.
-
-        Args:
-            enabled: True = Schutz aktiv, False = Schutz deaktiviert.
-
-        Returns:
-            API-Antwort mit dem neuen Status.
-        """
-        payload = {"device_id": self._device_id, "enabled": enabled}
-        return await self._request("POST", ENDPOINT_LEAKAGE_PROTECTION, json_data=payload)
-
-    async def get_ml_measurement(self) -> dict[str, Any]:
-        """
-        Ruft die ML-Messwerte (Machine Learning basierte Leckageerkennung) ab.
-
-        Returns:
-            Dict mit ML-Analysedaten und Schwellwerten.
-        """
-        return await self._request("GET", f"{ENDPOINT_ML_MEASUREMENT}/{self._device_id}")
-
-    # ========================================================================
-    # Messwerte
-    # ========================================================================
-
-    async def get_measurements(self) -> dict[str, Any]:
-        """
-        Ruft aktuelle Messwerte ab (Druck, Temperatur, Durchfluss etc.).
-
-        Returns:
-            Dict mit aktuellen Sensorwerten.
-        """
-        return await self._request("GET", f"{ENDPOINT_MEASUREMENTS}/{self._device_id}")
-
-    # ========================================================================
-    # Selbsttest
-    # ========================================================================
-
-    async def get_selftest(self) -> dict[str, Any]:
-        """
-        Ruft das Ergebnis des letzten Selbsttests ab.
-
-        Returns:
-            Dict mit 'result', 'last_run', 'details'.
-        """
-        return await self._request("GET", f"{ENDPOINT_SELFTEST}/{self._device_id}")
-
-    async def start_selftest(self) -> dict[str, Any]:
-        """
-        Startet einen Selbsttest des Gerätes.
-
-        Returns:
-            API-Antwort mit Bestätigung und ggf. geschätzter Dauer.
-        """
-        payload = {"device_id": self._device_id}
-        return await self._request("POST", ENDPOINT_SELFTEST, json_data=payload)
-
-    # ========================================================================
-    # Wasserversorgung
-    # ========================================================================
-
-    async def get_water_supply(self) -> dict[str, Any]:
-        """
-        Ruft Daten zur Wasserversorgung ab (Verbrauch, Parameter).
-
-        Returns:
-            Dict mit Verbrauchsdaten und konfigurierbaren Parametern.
-        """
-        return await self._request("GET", f"{ENDPOINT_WATER_SUPPLY}/{self._device_id}")
-
-    async def set_water_supply_params(self, params: dict[str, Any]) -> dict[str, Any]:
-        """
-        Setzt Parameter der Wasserversorgung.
-
-        Args:
-            params: Dict mit zu ändernden Parametern.
-
-        Returns:
-            API-Antwort mit den aktualisierten Parametern.
-        """
-        payload = {"device_id": self._device_id, **params}
-        return await self._request("POST", ENDPOINT_WATER_SUPPLY, json_data=payload)
-
-    # ========================================================================
-    # Statistiken
-    # ========================================================================
-
-    async def get_statistics(self) -> dict[str, Any]:
-        """
-        Ruft die Gerätestatistiken ab (wöchentlich, monatlich etc.).
-
-        Returns:
-            Dict mit verschiedenen Statistik-Datenpunkten.
-        """
-        return await self._request("GET", f"{ENDPOINT_STATISTICS}/{self._device_id}")
-
-    # ========================================================================
-    # Webhooks
-    # ========================================================================
-
-    async def get_webhooks(self) -> dict[str, Any]:
-        """
-        Ruft die aktuelle Webhook-Konfiguration ab.
-
-        Returns:
-            Dict mit registrierten Webhook-URLs und Events.
-        """
-        return await self._request("GET", f"{ENDPOINT_WEBHOOKS}/{self._device_id}")
-
-    async def register_webhook(self, webhook_url: str) -> dict[str, Any]:
-        """
-        Registriert eine Webhook-URL für Push-Benachrichtigungen.
-
-        Args:
-            webhook_url: Die URL, an die Events gesendet werden sollen.
-
-        Returns:
-            API-Antwort mit der Webhook-Registrierung.
-        """
-        payload = {
-            "device_id": self._device_id,
-            "url": webhook_url,
-            "events": ["state_change", "warning", "error", "leakage"],
-        }
-        return await self._request("POST", ENDPOINT_WEBHOOKS, json_data=payload)
-
-    # ========================================================================
-    # Alle Daten auf einmal abrufen (für den Coordinator)
-    # ========================================================================
-
-    async def get_all_data(self) -> dict[str, Any]:
-        """
-        Ruft alle relevanten Daten in einem Durchgang ab.
-
-        Diese Methode wird vom DataUpdateCoordinator aufgerufen und
-        bündelt alle API-Aufrufe. Einzelne Fehler werden abgefangen,
-        damit ein fehlgeschlagener Endpunkt nicht die gesamte
-        Aktualisierung blockiert.
-
-        Returns:
-            Dict mit allen gesammelten Daten, gruppiert nach Kategorie.
-        """
-        result: dict[str, Any] = {}
-
-        # Jeder Endpunkt wird einzeln abgefragt; bei Fehlern wird ein
-        # leeres Dict eingesetzt und der Fehler geloggt.
-        endpoints = {
-            "state": self.get_state,
-            "measurements": self.get_measurements,
-            "absence": self.get_absence,
-            "leakage_protection": self.get_leakage_protection,
-            "selftest": self.get_selftest,
-            "water_supply": self.get_water_supply,
-            "statistics": self.get_statistics,
+    def _headers(self) -> dict[str, str]:
+        """Standard-Header für alle API-Requests."""
+        return {
+            API_HEADER_KEY: self._api_key,
+            "Accept": "application/json",
         }
 
-        for key, method in endpoints.items():
-            try:
-                result[key] = await method()
-            except WatercrystApiError as err:
-                _LOGGER.warning(
-                    "Fehler beim Abruf von '%s': %s – verwende leere Daten",
-                    key,
-                    err,
-                )
-                result[key] = {}
-
-        return result
-
-    # ========================================================================
-    # Interner HTTP-Request-Handler
-    # ========================================================================
-
-    async def _request(
+    async def _throttled_request(
         self,
         method: str,
         endpoint: str,
-        json_data: dict[str, Any] | None = None,
-        auth_required: bool = True,
-    ) -> dict[str, Any]:
+        **kwargs: Any,
+    ) -> aiohttp.ClientResponse:
+        """Führt einen API-Request mit Rate-Limiting durch.
+
+        Stellt sicher, dass zwischen Requests mindestens API_REQUEST_DELAY
+        Sekunden vergehen. Dies verhindert HTTP 429 Fehler.
         """
-        Führt einen HTTP-Request gegen die Watercryst-API durch.
+        async with self._request_lock:
+            now = asyncio.get_event_loop().time()
+            elapsed = now - self._last_request_time
+            if elapsed < API_REQUEST_DELAY:
+                await asyncio.sleep(API_REQUEST_DELAY - elapsed)
 
-        Behandelt automatisch:
-        - Timeout (15 Sekunden)
-        - 401-Fehler → automatischer Token-Refresh + Retry
-        - Netzwerkfehler → WatercrystConnectionError
+            url = f"{self._base_url}{endpoint}"
+            _LOGGER.debug("API %s Request: %s", method.upper(), url)
 
-        Args:
-            method: HTTP-Methode (GET, POST, PUT, DELETE).
-            endpoint: Relativer API-Pfad.
-            json_data: Optionaler JSON-Body.
-            auth_required: Ob der Authorization-Header gesetzt werden soll.
-
-        Returns:
-            Die geparste JSON-Antwort als Dict.
-
-        Raises:
-            WatercrystAuthError: Bei 401/403-Fehlern nach Retry.
-            WatercrystConnectionError: Bei Netzwerkproblemen.
-            WatercrystApiError: Bei sonstigen API-Fehlern.
-        """
-        url = f"{self._base_url}{endpoint}"
-
-        # Header mit Bearer-Token aufbauen
-        headers: dict[str, str] = {"Content-Type": "application/json"}
-        if auth_required and self._access_token:
-            headers["Authorization"] = f"Bearer {self._access_token}"
-
-        _LOGGER.debug("API-Request: %s %s", method, url)
-
-        try:
-            async with async_timeout.timeout(REQUEST_TIMEOUT):
+            try:
                 response = await self._session.request(
                     method,
                     url,
-                    json=json_data,
-                    headers=headers,
+                    headers=self._headers,
+                    timeout=aiohttp.ClientTimeout(total=15),
+                    **kwargs,
                 )
+                self._last_request_time = asyncio.get_event_loop().time()
+                return response
 
-            # Bei 401 (Unauthorized): Token erneuern und erneut versuchen
-            if response.status == 401 and auth_required:
-                _LOGGER.debug("401 erhalten – versuche Token-Refresh")
-                await self.refresh_access_token()
+            except asyncio.TimeoutError as err:
+                raise WatercrystConnectionError(
+                    f"Timeout bei Anfrage an {url}"
+                ) from err
+            except aiohttp.ClientError as err:
+                raise WatercrystConnectionError(
+                    f"Verbindungsfehler bei {url}: {err}"
+                ) from err
 
-                # Retry mit neuem Token
-                headers["Authorization"] = f"Bearer {self._access_token}"
-                async with async_timeout.timeout(REQUEST_TIMEOUT):
-                    response = await self._session.request(
-                        method,
-                        url,
-                        json=json_data,
-                        headers=headers,
-                    )
+    async def _get(self, endpoint: str) -> Any:
+        """GET-Request an die API.
 
-            # HTTP-Statuscodes auswerten
-            if response.status in (401, 403):
-                raise WatercrystAuthError(
-                    f"Authentifizierung fehlgeschlagen (HTTP {response.status})"
-                )
+        Returns:
+            JSON-Response als Python-Objekt (dict, list, int, float)
 
-            if response.status >= 400:
-                error_text = await response.text()
-                raise WatercrystApiError(
-                    f"API-Fehler: HTTP {response.status} – {error_text}"
-                )
+        Raises:
+            WatercrystAuthError: Bei ungültigem API-Key (HTTP 401/403)
+            WatercrystApiError: Bei sonstigen HTTP-Fehlern
+        """
+        response = await self._throttled_request("get", endpoint)
 
-            # Erfolgreiche Antwort als JSON parsen
+        if response.status in (401, 403):
+            raise WatercrystAuthError(
+                "Ungültiger API-Key. Bitte unter "
+                "https://app.watercryst.com/Device/ prüfen."
+            )
+
+        if response.status == 429:
+            _LOGGER.warning(
+                "API Rate-Limit erreicht. Erhöhe den Abfrage-Intervall."
+            )
+            raise WatercrystApiError("API Rate-Limit erreicht (429)")
+
+        if response.status != 200:
+            text = await response.text()
+            raise WatercrystApiError(
+                f"API-Fehler {response.status}: {text}"
+            )
+
+        # Manche Endpunkte geben nur eine Zahl zurück (z.B. cumulative/daily)
+        content_type = response.headers.get("Content-Type", "")
+        if "application/json" in content_type:
             return await response.json()
 
-        except aiohttp.ClientConnectionError as err:
-            raise WatercrystConnectionError(
-                f"Verbindung zur Watercryst-API fehlgeschlagen: {err}"
-            ) from err
-        except TimeoutError as err:
-            raise WatercrystConnectionError(
-                f"Timeout bei der Verbindung zur Watercryst-API"
-            ) from err
+        # Fallback: Versuche als Text zu parsen (einzelner Zahlenwert)
+        text = await response.text()
+        text = text.strip()
+        try:
+            return float(text)
+        except ValueError:
+            return text
+
+    async def _put(self, endpoint: str, json_data: dict | None = None) -> Any:
+        """PUT-Request an die API."""
+        kwargs = {}
+        if json_data is not None:
+            kwargs["json"] = json_data
+
+        response = await self._throttled_request("put", endpoint, **kwargs)
+
+        if response.status in (401, 403):
+            raise WatercrystAuthError("Ungültiger API-Key.")
+
+        if response.status not in (200, 204):
+            text = await response.text()
+            raise WatercrystApiError(
+                f"API-Fehler {response.status}: {text}"
+            )
+
+        if response.status == 204:
+            return None
+
+        content_type = response.headers.get("Content-Type", "")
+        if "application/json" in content_type:
+            return await response.json()
+        return await response.text()
+
+    async def _post(self, endpoint: str, json_data: dict | None = None) -> Any:
+        """POST-Request an die API."""
+        kwargs = {}
+        if json_data is not None:
+            kwargs["json"] = json_data
+
+        response = await self._throttled_request("post", endpoint, **kwargs)
+
+        if response.status in (401, 403):
+            raise WatercrystAuthError("Ungültiger API-Key.")
+
+        if response.status not in (200, 201, 204):
+            text = await response.text()
+            raise WatercrystApiError(
+                f"API-Fehler {response.status}: {text}"
+            )
+
+        if response.status == 204:
+            return None
+
+        content_type = response.headers.get("Content-Type", "")
+        if "application/json" in content_type:
+            return await response.json()
+        return await response.text()
+
+    # ─── Datenabfrage (GET) ──────────────────────────────────────────────
+
+    async def async_validate_api_key(self) -> bool:
+        """Prüft ob der API-Key gültig ist.
+
+        Wird im Config-Flow verwendet um den Key zu validieren.
+        Ruft /v1/state auf – der leichteste Endpunkt.
+        """
+        try:
+            await self._get(ENDPOINT_STATE)
+            return True
+        except WatercrystAuthError:
+            return False
+        except WatercrystApiError:
+            # Andere Fehler (z.B. Server-Fehler) bedeuten nicht
+            # zwangsläufig dass der Key ungültig ist
+            return False
+
+    async def async_get_measurements(self) -> dict[str, Any]:
+        """Aktuelle Messwerte abrufen.
+
+        Endpunkt: GET /v1/measurements/direct
+
+        Returns:
+            {
+                "waterTemp": 12.5,        # Wassertemperatur in °C
+                "pressure": 3.2,          # Wasserdruck in bar
+                "lastWaterTapVolume": 5.3, # Letztes Zapfvolumen in Liter
+                "lastWaterTapDuration": 23 # Letzte Zapfdauer in Sekunden
+            }
+        """
+        data = await self._get(ENDPOINT_MEASUREMENTS)
+        if isinstance(data, dict):
+            return data
+        _LOGGER.warning("Unerwartete Antwort von measurements: %s", data)
+        return {}
+
+    async def async_get_state(self) -> dict[str, Any]:
+        """Gerätezustand abrufen.
+
+        Endpunkt: GET /v1/state
+
+        Returns:
+            {
+                "mode": {"name": "Normal"},
+                "online": true,
+                "waterProtection": {
+                    "absenceModeEnabled": false,
+                    "leakageProtectionEnabled": true,
+                    "leakageDetected": false
+                },
+                "error": false,
+                "warning": false
+            }
+        """
+        data = await self._get(ENDPOINT_STATE)
+        if isinstance(data, dict):
+            return data
+        _LOGGER.warning("Unerwartete Antwort von state: %s", data)
+        return {}
+
+    async def async_get_consumption_daily(self) -> float | None:
+        """Täglichen Gesamtverbrauch in Litern abrufen.
+
+        Endpunkt: GET /v1/statistics/cumulative/daily
+        Gibt einen einzelnen Zahlenwert zurück (z.B. 109.56).
+        """
+        data = await self._get(ENDPOINT_STATISTICS_DAILY)
+        if isinstance(data, (int, float)):
+            return float(data)
+        _LOGGER.warning("Unerwartete Antwort von daily stats: %s", data)
+        return None
+
+    async def async_get_consumption_weekly(self) -> float | None:
+        """Wöchentlichen Gesamtverbrauch in Litern abrufen.
+
+        Endpunkt: GET /v1/statistics/cumulative/weekly
+        """
+        data = await self._get(ENDPOINT_STATISTICS_WEEKLY)
+        if isinstance(data, (int, float)):
+            return float(data)
+        return None
+
+    async def async_get_consumption_monthly(self) -> float | None:
+        """Monatlichen Gesamtverbrauch in Litern abrufen.
+
+        Endpunkt: GET /v1/statistics/cumulative/monthly
+        """
+        data = await self._get(ENDPOINT_STATISTICS_MONTHLY)
+        if isinstance(data, (int, float)):
+            return float(data)
+        return None
+
+    # ─── Alle Daten in einem Durchlauf abrufen ───────────────────────────
+
+    async def async_get_all_data(self) -> dict[str, Any]:
+        """Ruft alle Datenquellen ab und kombiniert sie.
+
+        Zwischen den Requests liegt automatisch eine Pause
+        um die API nicht zu überlasten.
+
+        Returns:
+            Kombiniertes Dict mit allen Sensor-Daten
+        """
+        result: dict[str, Any] = {}
+
+        # 1. Messwerte (waterTemp, pressure, lastWaterTapVolume, lastWaterTapDuration)
+        try:
+            measurements = await self.async_get_measurements()
+            result.update(measurements)
+        except WatercrystApiError as err:
+            _LOGGER.error("Fehler bei Messwerte-Abfrage: %s", err)
+
+        # 2. Gerätezustand (mode, online, waterProtection)
+        try:
+            state = await self.async_get_state()
+            result["state"] = state
+
+            # Flache Schlüssel für einfachen Zugriff
+            if "mode" in state and isinstance(state["mode"], dict):
+                result["mode_name"] = state["mode"].get("name", "Unbekannt")
+            elif "mode" in state:
+                result["mode_name"] = str(state["mode"])
+
+            result["online"] = state.get("online", False)
+
+            wp = state.get("waterProtection", {})
+            if isinstance(wp, dict):
+                result["absence_mode_enabled"] = wp.get(
+                    "absenceModeEnabled", False
+                )
+                result["leakage_protection_enabled"] = wp.get(
+                    "leakageProtectionEnabled", True
+                )
+                result["leakage_detected"] = wp.get(
+                    "leakageDetected", False
+                )
+
+            result["error"] = state.get("error", False)
+            result["warning"] = state.get("warning", False)
+
+        except WatercrystApiError as err:
+            _LOGGER.error("Fehler bei State-Abfrage: %s", err)
+
+        # 3. Tagesverbrauch
+        try:
+            daily = await self.async_get_consumption_daily()
+            if daily is not None:
+                result["consumption_daily"] = daily
+        except WatercrystApiError as err:
+            _LOGGER.debug("Fehler bei Tagesverbrauch: %s", err)
+
+        # 4. Wochenverbrauch
+        try:
+            weekly = await self.async_get_consumption_weekly()
+            if weekly is not None:
+                result["consumption_weekly"] = weekly
+        except WatercrystApiError as err:
+            _LOGGER.debug("Fehler bei Wochenverbrauch: %s", err)
+
+        # 5. Monatsverbrauch
+        try:
+            monthly = await self.async_get_consumption_monthly()
+            if monthly is not None:
+                result["consumption_monthly"] = monthly
+        except WatercrystApiError as err:
+            _LOGGER.debug("Fehler bei Monatsverbrauch: %s", err)
+
+        return result
+
+    # ─── Steuerung (PUT/POST) ────────────────────────────────────────────
+
+    async def async_set_absence_mode(self, enabled: bool) -> None:
+        """Abwesenheitsmodus aktivieren/deaktivieren.
+
+        Endpunkt: PUT /v1/state/absenceMode
+        """
+        _LOGGER.info("Setze Abwesenheitsmodus: %s", enabled)
+        await self._put(ENDPOINT_ABSENCE_MODE, {"enabled": enabled})
+
+    async def async_set_leakage_protection(self, enabled: bool) -> None:
+        """Leckageschutz aktivieren/deaktivieren.
+
+        Endpunkt: PUT /v1/state/leakageProtection
+
+        WARNUNG: Bei Deaktivierung ist das Gebäude nicht
+        mehr vor Leckagen geschützt!
+        """
+        _LOGGER.info("Setze Leckageschutz: %s", enabled)
+        await self._put(ENDPOINT_LEAKAGE_PROTECTION, {"enabled": enabled})
+
+    async def async_start_selftest(self) -> None:
+        """Selbsttest starten.
+
+        Endpunkt: POST /v1/selftest
+        """
+        _LOGGER.info("Starte Selbsttest")
+        await self._post(ENDPOINT_SELFTEST)
+
+    async def async_acknowledge_warning(self) -> None:
+        """Warnung/Leckagealarm quittieren.
+
+        Endpunkt: POST /v1/state/acknowledge
+
+        WARNUNG: Vergewissern Sie sich vor dem Quittieren,
+        dass die Ursache des Alarms beseitigt wurde!
+        """
+        _LOGGER.info("Quittiere Warnung/Alarm")
+        await self._post(ENDPOINT_ACKNOWLEDGE_WARNING)
+
+    async def async_set_water_supply(self, open_valve: bool) -> None:
+        """Wasserzufuhr öffnen/schließen.
+
+        Endpunkt: PUT /v1/waterSupply
+        """
+        action = "open" if open_valve else "close"
+        _LOGGER.info("Setze Wasserzufuhr: %s", action)
+        await self._put(ENDPOINT_WATER_SUPPLY, {"state": action})

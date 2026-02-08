@@ -1,22 +1,16 @@
+"""Binary Sensor Plattform für Watercryst BIOCAT.
+
+Binäre Sensoren aus /v1/state:
+- online: Gerät erreichbar
+- waterProtection.absenceModeEnabled: Abwesenheitsmodus aktiv
+- waterProtection.leakageDetected: Leckage erkannt
+- error: Fehler vorhanden
+- warning: Warnung vorhanden
 """
-Binary-Sensor-Plattform für die Watercryst BIOCAT Integration.
-
-Binary-Sensoren haben nur zwei Zustände: An/Aus (True/False).
-Sie eignen sich perfekt für:
-- Fehler-/Warnungszustand (Problem ja/nein)
-- Leckage erkannt (ja/nein)
-- Geräte-Konnektivität (verbunden ja/nein)
-
-Jeder Binary-Sensor nutzt den DataUpdateCoordinator und hat eine
-eigene value_fn zur Extraktion des Wertes aus den API-Daten.
-"""
-
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
-import logging
-from typing import Any
+from typing import Any, Callable
 
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
@@ -25,70 +19,62 @@ from homeassistant.components.binary_sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from . import WatercrystDataUpdateCoordinator
+from . import WatercrystDataCoordinator
 from .const import (
-    BINARY_SENSOR_CONNECTIVITY,
+    BINARY_SENSOR_ABSENCE_MODE,
     BINARY_SENSOR_ERROR,
     BINARY_SENSOR_LEAKAGE_DETECTED,
+    BINARY_SENSOR_ONLINE,
     BINARY_SENSOR_WARNING,
+    CONF_DEVICE_NAME,
+    DEFAULT_DEVICE_NAME,
     DOMAIN,
-    MANUFACTURER,
-    MODEL,
+    URL_WATERCRYST,
 )
-
-_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, kw_only=True)
 class WatercrystBinarySensorDescription(BinarySensorEntityDescription):
-    """
-    Erweiterte Binary-Sensor-Beschreibung.
-
-    Enthält eine value_fn die aus den Coordinator-Daten einen
-    booleschen Wert extrahiert (True = Problem/Alarm, False = OK).
-    """
+    """Beschreibung eines Watercryst Binary Sensors."""
 
     value_fn: Callable[[dict[str, Any]], bool | None]
 
 
-# ============================================================================
-# Definition aller Binary-Sensor-Entitäten
-# ============================================================================
-
-BINARY_SENSOR_DESCRIPTIONS: tuple[WatercrystBinarySensorDescription, ...] = (
-    # Fehlerzustand – zeigt an, ob ein Fehler am Gerät vorliegt
+BINARY_SENSOR_DESCRIPTIONS: list[WatercrystBinarySensorDescription] = [
     WatercrystBinarySensorDescription(
-        key=BINARY_SENSOR_ERROR,
-        translation_key=BINARY_SENSOR_ERROR,
-        device_class=BinarySensorDeviceClass.PROBLEM,
-        value_fn=lambda data: data.get("state", {}).get("error", False),
+        key=BINARY_SENSOR_ONLINE,
+        translation_key="device_online",
+        device_class=BinarySensorDeviceClass.CONNECTIVITY,
+        value_fn=lambda data: data.get("online"),
     ),
-    # Warnungszustand – zeigt an, ob eine Warnung vorliegt
     WatercrystBinarySensorDescription(
-        key=BINARY_SENSOR_WARNING,
-        translation_key=BINARY_SENSOR_WARNING,
-        device_class=BinarySensorDeviceClass.PROBLEM,
-        value_fn=lambda data: data.get("state", {}).get("warning", False),
+        key=BINARY_SENSOR_ABSENCE_MODE,
+        translation_key="absence_mode_active",
+        value_fn=lambda data: data.get("absence_mode_enabled"),
     ),
-    # Leckage erkannt – zeigt an, ob eine Leckage detektiert wurde
     WatercrystBinarySensorDescription(
         key=BINARY_SENSOR_LEAKAGE_DETECTED,
-        translation_key=BINARY_SENSOR_LEAKAGE_DETECTED,
+        translation_key="leakage_detected",
         device_class=BinarySensorDeviceClass.MOISTURE,
-        value_fn=lambda data: data.get("leakage_protection", {}).get("leakage_detected", False),
+        value_fn=lambda data: data.get("leakage_detected"),
     ),
-    # Geräte-Konnektivität – zeigt an, ob das Gerät erreichbar ist
     WatercrystBinarySensorDescription(
-        key=BINARY_SENSOR_CONNECTIVITY,
-        translation_key=BINARY_SENSOR_CONNECTIVITY,
-        device_class=BinarySensorDeviceClass.CONNECTIVITY,
-        value_fn=lambda data: data.get("state", {}).get("connected", True),
+        key=BINARY_SENSOR_ERROR,
+        translation_key="device_error",
+        device_class=BinarySensorDeviceClass.PROBLEM,
+        value_fn=lambda data: data.get("error"),
     ),
-)
+    WatercrystBinarySensorDescription(
+        key=BINARY_SENSOR_WARNING,
+        translation_key="device_warning",
+        device_class=BinarySensorDeviceClass.PROBLEM,
+        value_fn=lambda data: data.get("warning"),
+    ),
+]
 
 
 async def async_setup_entry(
@@ -96,72 +82,46 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """
-    Richtet alle Binary-Sensor-Entitäten ein.
+    """Binary Sensoren einrichten."""
+    coordinator: WatercrystDataCoordinator = hass.data[DOMAIN][entry.entry_id]
 
-    Args:
-        hass: Die Home Assistant Instanz.
-        entry: Der ConfigEntry der Integration.
-        async_add_entities: Callback zum Registrieren neuer Entitäten.
-    """
-    coordinator: WatercrystDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-
-    entities = [
+    async_add_entities(
         WatercrystBinarySensor(coordinator, description, entry)
         for description in BINARY_SENSOR_DESCRIPTIONS
-    ]
-
-    async_add_entities(entities)
-    _LOGGER.debug("%d Binary-Sensor-Entitäten erstellt", len(entities))
+    )
 
 
 class WatercrystBinarySensor(
-    CoordinatorEntity[WatercrystDataUpdateCoordinator],
-    BinarySensorEntity,
+    CoordinatorEntity[WatercrystDataCoordinator], BinarySensorEntity
 ):
-    """
-    Repräsentiert einen Binary-Sensor der Watercryst BIOCAT Integration.
-
-    Gibt True/False zurück basierend auf den Daten vom Coordinator.
-    Die device_class bestimmt, wie der Sensor in der HA-Oberfläche
-    dargestellt wird (z.B. "Problem" oder "Feuchtigkeit").
-    """
+    """Binary Sensor für Watercryst BIOCAT."""
 
     entity_description: WatercrystBinarySensorDescription
     _attr_has_entity_name = True
 
     def __init__(
         self,
-        coordinator: WatercrystDataUpdateCoordinator,
+        coordinator: WatercrystDataCoordinator,
         description: WatercrystBinarySensorDescription,
         entry: ConfigEntry,
     ) -> None:
-        """
-        Initialisiert den Binary-Sensor.
-
-        Args:
-            coordinator: Der DataUpdateCoordinator.
-            description: Die Sensor-Beschreibung mit value_fn.
-            entry: Der ConfigEntry für die Geräte-Zuordnung.
-        """
+        """Binary Sensor initialisieren."""
         super().__init__(coordinator)
         self.entity_description = description
         self._attr_unique_id = f"{entry.entry_id}_{description.key}"
+
+        device_name = entry.data.get(CONF_DEVICE_NAME, DEFAULT_DEVICE_NAME)
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
-            name="Watercryst BIOCAT",
-            manufacturer=MANUFACTURER,
-            model=MODEL,
+            name=f"Watercryst {device_name}",
+            manufacturer="WATERCryst Wassertechnik GmbH",
+            model="BIOCAT KLS",
+            configuration_url=URL_WATERCRYST,
         )
 
     @property
     def is_on(self) -> bool | None:
-        """
-        Gibt den aktuellen Zustand des Binary-Sensors zurück.
-
-        True = Aktiv/Problem erkannt, False = OK/Inaktiv.
-        None = Zustand unbekannt (keine Daten).
-        """
+        """Aktueller Zustand."""
         if self.coordinator.data is None:
             return None
         return self.entity_description.value_fn(self.coordinator.data)

@@ -1,78 +1,54 @@
+"""Button-Plattform für Watercryst BIOCAT.
+
+Buttons für:
+- Selbsttest starten (POST /v1/selftest)
+- Warnung quittieren (POST /v1/state/acknowledge)
 """
-Button-Plattform für die Watercryst BIOCAT Integration.
-
-Buttons sind Einmal-Aktionen, die keine Zustände haben:
-- Selbsttest starten: Löst einen Geräte-Selbsttest aus
-- Warnung bestätigen: Quittiert aktive Warnungen/Fehler
-
-Nach dem Drücken wird die Aktion an die API gesendet und
-der Coordinator aktualisiert.
-"""
-
 from __future__ import annotations
 
-from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
-import logging
-from typing import Any
+from typing import Callable, Coroutine
 
-from homeassistant.components.button import (
-    ButtonDeviceClass,
-    ButtonEntity,
-    ButtonEntityDescription,
-)
+from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from . import WatercrystDataUpdateCoordinator
-from .api import WatercrystApiClient, WatercrystApiError
+from . import WatercrystDataCoordinator
+from .api import WatercrystApiClient
 from .const import (
-    BUTTON_ACK_WARNING,
-    BUTTON_START_SELFTEST,
+    BUTTON_ACKNOWLEDGE,
+    BUTTON_SELFTEST,
+    CONF_DEVICE_NAME,
+    DEFAULT_DEVICE_NAME,
     DOMAIN,
-    MANUFACTURER,
-    MODEL,
+    URL_WATERCRYST,
 )
-
-_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, kw_only=True)
 class WatercrystButtonDescription(ButtonEntityDescription):
-    """
-    Erweiterte Button-Beschreibung.
+    """Beschreibung eines Watercryst Buttons."""
 
-    Enthält eine press_fn, die beim Drücken des Buttons aufgerufen wird
-    und den entsprechenden API-Aufruf durchführt.
-    """
-
-    press_fn: Callable[[WatercrystApiClient], Coroutine[Any, Any, dict[str, Any]]]
+    press_fn: Callable[[WatercrystApiClient], Coroutine]
 
 
-# ============================================================================
-# Definition der Button-Entitäten
-# ============================================================================
-
-BUTTON_DESCRIPTIONS: tuple[WatercrystButtonDescription, ...] = (
-    # Selbsttest starten – löst den Geräte-Selbsttest aus
+BUTTON_DESCRIPTIONS: list[WatercrystButtonDescription] = [
     WatercrystButtonDescription(
-        key=BUTTON_START_SELFTEST,
-        translation_key=BUTTON_START_SELFTEST,
-        icon="mdi:play-circle-outline",
-        device_class=ButtonDeviceClass.RESTART,
-        press_fn=lambda client: client.start_selftest(),
+        key=BUTTON_SELFTEST,
+        translation_key="start_selftest",
+        icon="mdi:test-tube",
+        press_fn=lambda client: client.async_start_selftest(),
     ),
-    # Warnung bestätigen – quittiert alle aktiven Warnungen
     WatercrystButtonDescription(
-        key=BUTTON_ACK_WARNING,
-        translation_key=BUTTON_ACK_WARNING,
+        key=BUTTON_ACKNOWLEDGE,
+        translation_key="acknowledge_warning",
         icon="mdi:check-circle-outline",
-        press_fn=lambda client: client.acknowledge_event(),
+        press_fn=lambda client: client.async_acknowledge_warning(),
     ),
-)
+]
 
 
 async def async_setup_entry(
@@ -80,84 +56,44 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """
-    Richtet alle Button-Entitäten ein.
+    """Buttons einrichten."""
+    coordinator: WatercrystDataCoordinator = hass.data[DOMAIN][entry.entry_id]
 
-    Args:
-        hass: Die Home Assistant Instanz.
-        entry: Der ConfigEntry der Integration.
-        async_add_entities: Callback zum Registrieren neuer Entitäten.
-    """
-    data = hass.data[DOMAIN][entry.entry_id]
-    coordinator: WatercrystDataUpdateCoordinator = data["coordinator"]
-    client: WatercrystApiClient = data["client"]
-
-    entities = [
-        WatercrystButton(coordinator, client, description, entry)
+    async_add_entities(
+        WatercrystButton(coordinator, description, entry)
         for description in BUTTON_DESCRIPTIONS
-    ]
-
-    async_add_entities(entities)
-    _LOGGER.debug("%d Button-Entitäten erstellt", len(entities))
+    )
 
 
 class WatercrystButton(
-    CoordinatorEntity[WatercrystDataUpdateCoordinator],
-    ButtonEntity,
+    CoordinatorEntity[WatercrystDataCoordinator], ButtonEntity
 ):
-    """
-    Repräsentiert einen Button der Watercryst BIOCAT Integration.
-
-    Buttons haben keinen Zustand – sie führen beim Drücken eine
-    einmalige Aktion aus (z.B. Selbsttest starten, Warnung quittieren).
-    """
+    """Button für Watercryst BIOCAT Aktionen."""
 
     entity_description: WatercrystButtonDescription
     _attr_has_entity_name = True
 
     def __init__(
         self,
-        coordinator: WatercrystDataUpdateCoordinator,
-        client: WatercrystApiClient,
+        coordinator: WatercrystDataCoordinator,
         description: WatercrystButtonDescription,
         entry: ConfigEntry,
     ) -> None:
-        """
-        Initialisiert den Button.
-
-        Args:
-            coordinator: Der DataUpdateCoordinator.
-            client: Der API-Client für direkte Aufrufe.
-            description: Die Button-Beschreibung.
-            entry: Der ConfigEntry.
-        """
+        """Button initialisieren."""
         super().__init__(coordinator)
         self.entity_description = description
-        self._client = client
         self._attr_unique_id = f"{entry.entry_id}_{description.key}"
+
+        device_name = entry.data.get(CONF_DEVICE_NAME, DEFAULT_DEVICE_NAME)
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
-            name="Watercryst BIOCAT",
-            manufacturer=MANUFACTURER,
-            model=MODEL,
+            name=f"Watercryst {device_name}",
+            manufacturer="WATERCryst Wassertechnik GmbH",
+            model="BIOCAT KLS",
+            configuration_url=URL_WATERCRYST,
         )
 
     async def async_press(self) -> None:
-        """
-        Wird aufgerufen, wenn der Button in der HA-UI gedrückt wird.
-
-        Führt die in der Beschreibung definierte Aktion aus und
-        aktualisiert anschließend die Coordinator-Daten.
-        """
-        _LOGGER.debug("Button '%s' gedrückt", self.entity_description.key)
-        try:
-            await self.entity_description.press_fn(self._client)
-            # Daten sofort aktualisieren, damit z.B. der Selftest-Status
-            # schnell in der UI sichtbar wird
-            await self.coordinator.async_request_refresh()
-        except WatercrystApiError as err:
-            _LOGGER.error(
-                "Fehler beim Ausführen von '%s': %s",
-                self.entity_description.key,
-                err,
-            )
+        """Button gedrückt."""
+        await self.entity_description.press_fn(self.coordinator.client)
+        await self.coordinator.async_request_refresh()

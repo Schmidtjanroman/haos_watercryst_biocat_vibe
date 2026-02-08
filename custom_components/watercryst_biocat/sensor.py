@@ -1,24 +1,16 @@
+"""Sensor-Plattform für Watercryst BIOCAT.
+
+Sensoren basierend auf den echten API-Endpunkten:
+- /v1/measurements/direct → waterTemp, pressure, lastWaterTapVolume, lastWaterTapDuration
+- /v1/statistics/cumulative/daily → Tagesverbrauch
+- /v1/statistics/cumulative/weekly → Wochenverbrauch
+- /v1/statistics/cumulative/monthly → Monatsverbrauch
+- /v1/state → mode.name (Betriebsmodus)
 """
-Sensor-Plattform für die Watercryst BIOCAT Integration.
-
-Diese Datei definiert alle Sensor-Entitäten, die von der Integration
-erstellt werden. Die Sensoren nutzen den DataUpdateCoordinator, um
-periodisch aktualisierte Daten zu erhalten.
-
-Wichtige Konzepte:
-- state_class: MEASUREMENT → HA erstellt automatisch Langzeit-Statistiken
-- state_class: TOTAL_INCREASING → Für Zähler die nur steigen (z.B. Verbrauch)
-- device_class: Ermöglicht automatische Einheiten-Konvertierung und Icons
-
-Alle Entitätsnamen und Beschreibungen kommen aus den Translation-Dateien.
-"""
-
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
-import logging
-from typing import Any
+from typing import Any, Callable
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -30,197 +22,113 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     UnitOfPressure,
     UnitOfTemperature,
+    UnitOfTime,
     UnitOfVolume,
-    UnitOfVolumeFlowRate,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from . import WatercrystDataUpdateCoordinator
+from . import WatercrystDataCoordinator
 from .const import (
+    CONF_DEVICE_NAME,
+    DEFAULT_DEVICE_NAME,
     DOMAIN,
-    MANUFACTURER,
-    MODEL,
-    SENSOR_DAILY_CONSUMPTION,
-    SENSOR_DEVICE_STATE,
-    SENSOR_ERROR_MESSAGE,
-    SENSOR_FLOW_RATE,
-    SENSOR_LEAKAGE_LAST_RUN,
-    SENSOR_SELFTEST_LAST_RUN,
-    SENSOR_SELFTEST_RESULT,
-    SENSOR_STAT_MONTHLY,
-    SENSOR_STAT_WEEKLY,
-    SENSOR_TOTAL_CONSUMPTION,
-    SENSOR_WATER_HARDNESS,
-    SENSOR_WATER_PRESSURE,
-    SENSOR_WATER_TEMPERATURE,
+    SENSOR_CONSUMPTION_DAILY,
+    SENSOR_CONSUMPTION_MONTHLY,
+    SENSOR_CONSUMPTION_WEEKLY,
+    SENSOR_LAST_TAP_DURATION,
+    SENSOR_LAST_TAP_VOLUME,
+    SENSOR_MODE,
+    SENSOR_PRESSURE,
+    SENSOR_WATER_TEMP,
+    URL_WATERCRYST,
 )
-
-_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, kw_only=True)
 class WatercrystSensorDescription(SensorEntityDescription):
-    """
-    Erweiterte Sensor-Beschreibung mit einer Funktion zur Wert-Extraktion.
-
-    Das Feld 'value_fn' definiert, wie der Sensorwert aus den
-    Coordinator-Daten extrahiert wird. So kann jeder Sensor flexibel
-    auf seine Datenquelle zugreifen.
-    """
+    """Beschreibung eines Watercryst Sensors."""
 
     value_fn: Callable[[dict[str, Any]], Any]
-    data_key: str = ""  # Hauptschlüssel im Coordinator-Daten-Dict
 
 
-# ============================================================================
-# Definition aller Sensor-Entitäten
-# ============================================================================
-
-SENSOR_DESCRIPTIONS: tuple[WatercrystSensorDescription, ...] = (
-    # --- Messwerte (measurements) ---
-    # Wasserdruck mit automatischer Statistik-Erfassung
+# Sensor-Definitionen basierend auf echten API-Antworten
+SENSOR_DESCRIPTIONS: list[WatercrystSensorDescription] = [
+    # ─── Aus /v1/measurements/direct ─────────────────────────────────
     WatercrystSensorDescription(
-        key=SENSOR_WATER_PRESSURE,
-        translation_key=SENSOR_WATER_PRESSURE,
-        device_class=SensorDeviceClass.PRESSURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfPressure.BAR,
-        suggested_display_precision=2,
-        data_key="measurements",
-        value_fn=lambda data: data.get("measurements", {}).get("pressure"),
-    ),
-    # Wassertemperatur
-    WatercrystSensorDescription(
-        key=SENSOR_WATER_TEMPERATURE,
-        translation_key=SENSOR_WATER_TEMPERATURE,
+        key=SENSOR_WATER_TEMP,
+        translation_key="water_temperature",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         device_class=SensorDeviceClass.TEMPERATURE,
         state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         suggested_display_precision=1,
-        data_key="measurements",
-        value_fn=lambda data: data.get("measurements", {}).get("temperature"),
+        value_fn=lambda data: data.get("waterTemp"),
     ),
-    # Wasserhärte (keine Standard device_class vorhanden)
     WatercrystSensorDescription(
-        key=SENSOR_WATER_HARDNESS,
-        translation_key=SENSOR_WATER_HARDNESS,
-        icon="mdi:water-opacity",
+        key=SENSOR_PRESSURE,
+        translation_key="water_pressure",
+        native_unit_of_measurement=UnitOfPressure.BAR,
+        device_class=SensorDeviceClass.PRESSURE,
         state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement="°dH",
-        suggested_display_precision=1,
-        data_key="measurements",
-        value_fn=lambda data: data.get("measurements", {}).get("hardness"),
+        suggested_display_precision=2,
+        value_fn=lambda data: data.get("pressure"),
     ),
-    # Durchflussrate
     WatercrystSensorDescription(
-        key=SENSOR_FLOW_RATE,
-        translation_key=SENSOR_FLOW_RATE,
-        icon="mdi:water-pump",
-        device_class=SensorDeviceClass.VOLUME_FLOW_RATE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfVolumeFlowRate.LITERS_PER_MINUTE,
-        suggested_display_precision=1,
-        data_key="measurements",
-        value_fn=lambda data: data.get("measurements", {}).get("flow_rate"),
-    ),
-    # --- Wasserversorgung / Verbrauch ---
-    # Gesamtverbrauch (stetig steigend → total_increasing für korrekte Statistiken)
-    WatercrystSensorDescription(
-        key=SENSOR_TOTAL_CONSUMPTION,
-        translation_key=SENSOR_TOTAL_CONSUMPTION,
-        icon="mdi:water",
-        device_class=SensorDeviceClass.WATER,
-        state_class=SensorStateClass.TOTAL_INCREASING,
+        key=SENSOR_LAST_TAP_VOLUME,
+        translation_key="last_tap_volume",
         native_unit_of_measurement=UnitOfVolume.LITERS,
+        device_class=SensorDeviceClass.WATER,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        value_fn=lambda data: data.get("lastWaterTapVolume"),
+    ),
+    WatercrystSensorDescription(
+        key=SENSOR_LAST_TAP_DURATION,
+        translation_key="last_tap_duration",
+        native_unit_of_measurement=UnitOfTime.SECONDS,
+        device_class=SensorDeviceClass.DURATION,
+        state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        data_key="water_supply",
-        value_fn=lambda data: data.get("water_supply", {}).get("total_consumption"),
+        value_fn=lambda data: data.get("lastWaterTapDuration"),
     ),
-    # Tagesverbrauch
+    # ─── Aus /v1/statistics/cumulative/* ──────────────────────────────
     WatercrystSensorDescription(
-        key=SENSOR_DAILY_CONSUMPTION,
-        translation_key=SENSOR_DAILY_CONSUMPTION,
-        icon="mdi:water-outline",
-        device_class=SensorDeviceClass.WATER,
-        state_class=SensorStateClass.TOTAL_INCREASING,
+        key=SENSOR_CONSUMPTION_DAILY,
+        translation_key="consumption_daily",
         native_unit_of_measurement=UnitOfVolume.LITERS,
+        device_class=SensorDeviceClass.WATER,
+        state_class=SensorStateClass.TOTAL,
         suggested_display_precision=1,
-        data_key="water_supply",
-        value_fn=lambda data: data.get("water_supply", {}).get("daily_consumption"),
+        value_fn=lambda data: data.get("consumption_daily"),
     ),
-    # --- Selbsttest ---
-    # Ergebnis des letzten Selbsttests (Text: "ok", "failed", "pending")
     WatercrystSensorDescription(
-        key=SENSOR_SELFTEST_RESULT,
-        translation_key=SENSOR_SELFTEST_RESULT,
-        icon="mdi:clipboard-check-outline",
-        data_key="selftest",
-        value_fn=lambda data: data.get("selftest", {}).get("result"),
-    ),
-    # Zeitpunkt des letzten Selbsttests
-    WatercrystSensorDescription(
-        key=SENSOR_SELFTEST_LAST_RUN,
-        translation_key=SENSOR_SELFTEST_LAST_RUN,
-        device_class=SensorDeviceClass.TIMESTAMP,
-        data_key="selftest",
-        value_fn=lambda data: data.get("selftest", {}).get("last_run"),
-    ),
-    # --- Leckageschutz ---
-    # Zeitpunkt der letzten Leckageschutz-Prüfung
-    WatercrystSensorDescription(
-        key=SENSOR_LEAKAGE_LAST_RUN,
-        translation_key=SENSOR_LEAKAGE_LAST_RUN,
-        device_class=SensorDeviceClass.TIMESTAMP,
-        icon="mdi:shield-check",
-        data_key="leakage_protection",
-        value_fn=lambda data: data.get("leakage_protection", {}).get("last_run"),
-    ),
-    # --- Gerätestatus ---
-    # Aktueller Betriebszustand des Gerätes
-    WatercrystSensorDescription(
-        key=SENSOR_DEVICE_STATE,
-        translation_key=SENSOR_DEVICE_STATE,
-        icon="mdi:information-outline",
-        data_key="state",
-        value_fn=lambda data: data.get("state", {}).get("state"),
-    ),
-    # Fehlermeldungstext (leer wenn kein Fehler)
-    WatercrystSensorDescription(
-        key=SENSOR_ERROR_MESSAGE,
-        translation_key=SENSOR_ERROR_MESSAGE,
-        icon="mdi:alert-circle-outline",
-        data_key="state",
-        value_fn=lambda data: data.get("state", {}).get("error_message"),
-    ),
-    # --- Statistiken ---
-    # Wöchentlicher Verbrauch
-    WatercrystSensorDescription(
-        key=SENSOR_STAT_WEEKLY,
-        translation_key=SENSOR_STAT_WEEKLY,
-        icon="mdi:chart-bar",
-        device_class=SensorDeviceClass.WATER,
-        state_class=SensorStateClass.MEASUREMENT,
+        key=SENSOR_CONSUMPTION_WEEKLY,
+        translation_key="consumption_weekly",
         native_unit_of_measurement=UnitOfVolume.LITERS,
-        suggested_display_precision=0,
-        data_key="statistics",
-        value_fn=lambda data: data.get("statistics", {}).get("weekly_consumption"),
-    ),
-    # Monatlicher Verbrauch
-    WatercrystSensorDescription(
-        key=SENSOR_STAT_MONTHLY,
-        translation_key=SENSOR_STAT_MONTHLY,
-        icon="mdi:chart-areaspline",
         device_class=SensorDeviceClass.WATER,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfVolume.LITERS,
-        suggested_display_precision=0,
-        data_key="statistics",
-        value_fn=lambda data: data.get("statistics", {}).get("monthly_consumption"),
+        state_class=SensorStateClass.TOTAL,
+        suggested_display_precision=1,
+        value_fn=lambda data: data.get("consumption_weekly"),
     ),
-)
+    WatercrystSensorDescription(
+        key=SENSOR_CONSUMPTION_MONTHLY,
+        translation_key="consumption_monthly",
+        native_unit_of_measurement=UnitOfVolume.LITERS,
+        device_class=SensorDeviceClass.WATER,
+        state_class=SensorStateClass.TOTAL,
+        suggested_display_precision=0,
+        value_fn=lambda data: data.get("consumption_monthly"),
+    ),
+    # ─── Aus /v1/state ───────────────────────────────────────────────
+    WatercrystSensorDescription(
+        key=SENSOR_MODE,
+        translation_key="operation_mode",
+        device_class=SensorDeviceClass.ENUM,
+        value_fn=lambda data: data.get("mode_name"),
+    ),
+]
 
 
 async def async_setup_entry(
@@ -228,79 +136,44 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """
-    Richtet alle Sensor-Entitäten basierend auf dem ConfigEntry ein.
+    """Sensoren einrichten."""
+    coordinator: WatercrystDataCoordinator = hass.data[DOMAIN][entry.entry_id]
 
-    Wird von Home Assistant aufgerufen, nachdem die Integration geladen wurde.
-    Erstellt für jede Sensor-Beschreibung eine WatercrystSensor-Instanz.
-
-    Args:
-        hass: Die Home Assistant Instanz.
-        entry: Der ConfigEntry der Integration.
-        async_add_entities: Callback zum Registrieren neuer Entitäten.
-    """
-    coordinator: WatercrystDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-
-    # Für jede Sensor-Beschreibung eine Entität erstellen
-    entities = [
+    async_add_entities(
         WatercrystSensor(coordinator, description, entry)
         for description in SENSOR_DESCRIPTIONS
-    ]
-
-    async_add_entities(entities)
-    _LOGGER.debug("%d Sensor-Entitäten für Watercryst BIOCAT erstellt", len(entities))
+    )
 
 
-class WatercrystSensor(CoordinatorEntity[WatercrystDataUpdateCoordinator], SensorEntity):
-    """
-    Repräsentiert einen einzelnen Sensor der Watercryst BIOCAT Integration.
-
-    Erbt von CoordinatorEntity, um automatisch über neue Daten vom
-    DataUpdateCoordinator informiert zu werden. Jeder Sensor hat eine
-    eigene Beschreibung (WatercrystSensorDescription), die definiert,
-    wie der Wert aus den Coordinator-Daten extrahiert wird.
-    """
+class WatercrystSensor(CoordinatorEntity[WatercrystDataCoordinator], SensorEntity):
+    """Sensor für Watercryst BIOCAT Messwerte."""
 
     entity_description: WatercrystSensorDescription
     _attr_has_entity_name = True
 
     def __init__(
         self,
-        coordinator: WatercrystDataUpdateCoordinator,
+        coordinator: WatercrystDataCoordinator,
         description: WatercrystSensorDescription,
         entry: ConfigEntry,
     ) -> None:
-        """
-        Initialisiert den Sensor.
-
-        Args:
-            coordinator: Der DataUpdateCoordinator mit den API-Daten.
-            description: Die Sensor-Beschreibung mit value_fn.
-            entry: Der ConfigEntry für die Geräte-Zuordnung.
-        """
+        """Sensor initialisieren."""
         super().__init__(coordinator)
         self.entity_description = description
-
-        # Eindeutige ID: Kombination aus Entry-ID und Sensor-Key
         self._attr_unique_id = f"{entry.entry_id}_{description.key}"
 
-        # Geräte-Information für die HA-Geräteübersicht
+        device_name = entry.data.get(CONF_DEVICE_NAME, DEFAULT_DEVICE_NAME)
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
-            name="Watercryst BIOCAT",
-            manufacturer=MANUFACTURER,
-            model=MODEL,
+            name=f"Watercryst {device_name}",
+            manufacturer="WATERCryst Wassertechnik GmbH",
+            model="BIOCAT KLS",
+            configuration_url=URL_WATERCRYST,
         )
 
     @property
     def native_value(self) -> Any:
-        """
-        Gibt den aktuellen Sensorwert zurück.
-
-        Nutzt die value_fn aus der Sensor-Beschreibung, um den Wert
-        aus den Coordinator-Daten zu extrahieren. Wenn keine Daten
-        vorhanden sind, wird None zurückgegeben.
-        """
+        """Aktueller Sensorwert aus den Coordinator-Daten."""
         if self.coordinator.data is None:
             return None
         return self.entity_description.value_fn(self.coordinator.data)

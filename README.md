@@ -1,106 +1,144 @@
-# Watercryst BIOCAT – Home Assistant Integration
+# 🚰 Watercryst BIOCAT – Home Assistant Integration
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![HA Version](https://img.shields.io/badge/Home%20Assistant-2024.1%2B-blue.svg)](https://www.home-assistant.io/)
+[![Version](https://img.shields.io/badge/Version-2.0.0-blue.svg)](https://github.com/Schmidtjanroman/haos_watercryst_biocat_vibe/releases)
 
-Custom Component zur Einbindung von **Watercryst BIOCAT** Wasseraufbereitungsgeräten in Home Assistant.
+Home Assistant Custom Component zur Überwachung und Steuerung von **Watercryst BIOCAT** Wasseraufbereitungsgeräten über die offizielle REST-API.
 
-![BIOCAT Gerät](https://assets.heizung-billiger.de/images/watercryst/large_default/large_default-12000273_B_.jpg@webp)
+<p align="center">
+  <img src="https://www.watercryst.com/wp-content/uploads/biocat-kls-3000.png" alt="BIOCAT KLS" width="300">
+</p>
 
-## Funktionen
+---
+
+## ✨ Funktionen
 
 | Typ | Entität | Beschreibung |
 |-----|---------|-------------|
-| 🔢 Sensor | Wasserdruck | Aktueller Druck in Bar (mit Langzeit-Statistik) |
-| 🔢 Sensor | Wassertemperatur | Aktuelle Temperatur in °C |
-| 🔢 Sensor | Wasserhärte | Aktuelle Härte in °dH |
-| 🔢 Sensor | Durchflussrate | Aktueller Durchfluss in l/min |
-| 🔢 Sensor | Gesamtverbrauch | Zählerstand in Litern (total_increasing) |
-| 🔢 Sensor | Tagesverbrauch | Heutiger Verbrauch in Litern |
-| 🔢 Sensor | Wochen-/Monatsverbrauch | Statistik-Sensoren |
-| 📝 Sensor | Gerätezustand | Aktueller Betriebsstatus |
-| 📝 Sensor | Fehlermeldung | Aktive Fehlermeldung (Text) |
-| 📝 Sensor | Selbsttest-Ergebnis | Ergebnis des letzten Tests |
-| 🕐 Sensor | Selbsttest/Leckage zuletzt | Zeitstempel der letzten Prüfung |
-| 🔴 Binary Sensor | Fehler / Warnung | Problem-Erkennung |
-| 🔴 Binary Sensor | Leckage erkannt | Feuchtigkeits-Erkennung |
-| 🔴 Binary Sensor | Verbindung | Geräte-Konnektivität |
-| 🔀 Switch | Abwesenheitsmodus | An = Abwesend, Aus = Anwesend |
-| 🔀 Switch | Leckageschutz | Ein-/Ausschalten |
-| 🔘 Button | Selbsttest starten | Geräte-Selbsttest auslösen |
-| 🔘 Button | Warnung bestätigen | Aktive Warnungen quittieren |
+| 🌡️ Sensor | Wassertemperatur | Aktuelle Wassertemperatur (°C) |
+| 💧 Sensor | Wasserdruck | Aktueller Wasserdruck (bar) |
+| 🚿 Sensor | Letztes Zapfvolumen | Volumen des letzten Wasserzapfens (L) |
+| ⏱️ Sensor | Letzte Zapfdauer | Dauer des letzten Wasserzapfens (s) |
+| 📊 Sensor | Tagesverbrauch | Gesamtverbrauch heute (L) |
+| 📊 Sensor | Wochenverbrauch | Gesamtverbrauch diese Woche (L) |
+| 📊 Sensor | Monatsverbrauch | Gesamtverbrauch diesen Monat (L) |
+| 🔄 Sensor | Betriebsmodus | Aktueller Betriebsmodus |
+| 🟢 Binary Sensor | Gerät online | Verbindungsstatus |
+| 🏠 Binary Sensor | Abwesenheitsmodus | Aktiv/Inaktiv |
+| 💦 Binary Sensor | Leckage erkannt | Leckage-Alarm |
+| ⚠️ Binary Sensor | Gerätefehler | Fehlerstatus |
+| ⚠️ Binary Sensor | Gerätewarnung | Warnungsstatus |
+| 🔘 Switch | Abwesenheitsmodus | Ein-/Ausschalten |
+| 🛡️ Switch | Leckageschutz | Ein-/Ausschalten |
+| ▶️ Button | Selbsttest | Selbsttest starten |
+| ✅ Button | Warnung quittieren | Alarm bestätigen |
 
-## Installation via HACS
+**Tagesverbrauch** kann direkt im Home Assistant **Energie-Dashboard** verwendet werden.
 
-### 1. Repository hinzufügen
+---
 
-1. HACS in Home Assistant öffnen
-2. **Integrationen** → **⋮** (drei Punkte oben rechts) → **Benutzerdefinierte Repositories**
-3. URL eingeben: `https://github.com/Schmidtjanroman/haos_watercryst_biocat_vibe`
-4. Kategorie: **Integration**
-5. **Hinzufügen** klicken
+## 📋 Voraussetzungen
 
-### 2. Integration installieren
+1. Ein **BIOCAT KLS** Gerät mit Cloud-Anbindung (App-Funktion)
+2. Ein **API-Key** von [app.watercryst.com/Device/](https://app.watercryst.com/Device/)
 
-1. In HACS nach **Watercryst BIOCAT** suchen
-2. **Installieren** klicken
-3. **Home Assistant neu starten**
+### API-Key erstellen
 
-### 3. Integration einrichten
+1. Öffne [app.watercryst.com/Device/](https://app.watercryst.com/Device/)
+2. Melde dich mit deinem Watercryst-Konto an
+3. Klicke auf **"Hinzufügen"** um einen neuen API-Key zu erstellen
+4. Kopiere den generierten Key (z.B. `5vwi` oder `7pFY`)
+
+---
+
+## 🔧 Installation
+
+### Über HACS (empfohlen)
+
+1. **HACS** → **Integrationen** → ⋮ (drei Punkte oben rechts) → **Benutzerdefinierte Repositories**
+2. Repository-URL eingeben: `https://github.com/Schmidtjanroman/haos_watercryst_biocat_vibe`
+3. Kategorie: **Integration**
+4. **Watercryst BIOCAT** suchen und installieren
+5. Home Assistant **neu starten**
+
+### Manuell
+
+1. Repository als ZIP herunterladen
+2. `custom_components/watercryst_biocat/` in deinen HA-Ordner `config/custom_components/` kopieren
+3. Home Assistant **neu starten**
+
+---
+
+## ⚙️ Konfiguration
 
 1. **Einstellungen** → **Geräte & Dienste** → **Integration hinzufügen**
 2. Nach **Watercryst BIOCAT** suchen
-3. Benutzername und Passwort des Watercryst-Kontos eingeben
-4. Die Integration erstellt automatisch alle Sensoren und Schalter
+3. **API-Key** eingeben (von app.watercryst.com/Device/)
+4. Optional: **Gerätename** anpassen
+5. Fertig! 🎉
 
-## Manuelle Installation
+### Optionen
 
-Falls HACS nicht verfügbar ist:
+Nach der Einrichtung kannst du in den Integrationsoptionen das **Abfrage-Intervall** anpassen (Standard: 30 Sekunden, Minimum: 10 Sekunden).
 
-```bash
-# Im Home Assistant Config-Verzeichnis:
-cd /config
-mkdir -p custom_components/watercryst_biocat
-# Alle Dateien aus diesem Repository nach custom_components/watercryst_biocat/ kopieren
-# Danach Home Assistant neu starten
-```
+> **Hinweis:** Die Watercryst-API verträgt keine zu häufigen Abfragen. Ein Intervall unter 15 Sekunden wird nicht empfohlen.
 
-## Übersetzungen
+---
 
-Die Integration unterstützt Mehrsprachigkeit über das Home Assistant i18n-System:
+## 🔌 API-Referenz
 
-- `translations/en.json` – Englisch (Standard)
-- `translations/de.json` – Deutsch
+Diese Integration nutzt die offizielle Watercryst REST-API:
 
-### Weitere Sprachen hinzufügen
+- **Dokumentation:** [appapi.watercryst.com](https://appapi.watercryst.com/#overview)
+- **OpenAPI Spec:** [api-v1.yaml](https://appapi.watercryst.com/api-v1.yaml)
+- **Authentifizierung:** `X-API-KEY` Header
+- **Basis-URL:** `https://appapi.watercryst.com/v1/`
 
-Einfach eine neue JSON-Datei im `translations/`-Ordner erstellen (z.B. `fr.json` für Französisch) und die Texte übersetzen. Kein Python-Code muss geändert werden.
+### Verwendete Endpunkte
 
-## Dateistruktur
+| Methode | Endpunkt | Beschreibung |
+|---------|----------|-------------|
+| GET | `/v1/measurements/direct` | Aktuelle Messwerte |
+| GET | `/v1/state` | Gerätezustand |
+| GET | `/v1/statistics/cumulative/daily` | Tagesverbrauch |
+| GET | `/v1/statistics/cumulative/weekly` | Wochenverbrauch |
+| GET | `/v1/statistics/cumulative/monthly` | Monatsverbrauch |
+| PUT | `/v1/state/absenceMode` | Abwesenheitsmodus setzen |
+| PUT | `/v1/state/leakageProtection` | Leckageschutz setzen |
+| POST | `/v1/selftest` | Selbsttest starten |
+| POST | `/v1/state/acknowledge` | Warnung quittieren |
+
+---
+
+## 📁 Dateistruktur
 
 ```
 custom_components/watercryst_biocat/
-├── __init__.py          # Einstiegspunkt, DataUpdateCoordinator
-├── api.py               # Asynchroner API-Client
-├── config_flow.py       # GUI-basierte Einrichtung
-├── const.py             # Alle Konstanten
-├── manifest.json        # Integration-Metadaten
-├── strings.json         # Basis-Übersetzung (Pflicht für Config Flow)
-├── sensor.py            # Messwert-Sensoren
-├── binary_sensor.py     # Fehler-/Warnungs-Sensoren
-├── switch.py            # Abwesenheit & Leckageschutz
-├── button.py            # Selbsttest & Bestätigungen
+├── __init__.py          # Integration Setup & DataUpdateCoordinator
+├── api.py               # REST-API Client (X-API-KEY Auth)
+├── config_flow.py       # GUI-Setup (API-Key Eingabe)
+├── const.py             # Konstanten & API-Endpunkte
+├── sensor.py            # 8 Sensoren
+├── binary_sensor.py     # 5 Binary Sensoren
+├── switch.py            # 2 Switches
+├── button.py            # 2 Buttons
+├── manifest.json        # HA Integration Manifest
+├── strings.json         # Basis-Übersetzungen (Config Flow)
 └── translations/
-    ├── en.json           # Englische Übersetzungen
-    └── de.json           # Deutsche Übersetzungen
+    ├── en.json          # Englisch
+    └── de.json          # Deutsch
 ```
 
-## Hinweise
+---
 
-- **API-Endpunkte**: Die Endpunkte sind basierend auf REST-Standards simuliert, da keine öffentliche API-Dokumentation vorliegt. Bei Abweichungen müssen die Endpunkte in `api.py` und die Daten-Extraktion in den Entity-Dateien angepasst werden.
-- **Polling-Intervall**: Standardmäßig 60 Sekunden. Kann in `const.py` über `UPDATE_INTERVAL` geändert werden.
-- **Credentials**: Werden sicher im Home Assistant Credential-Store gespeichert.
+## 🙏 Credits
 
-## Lizenz
+- **API-Dokumentation:** [WATERCryst Wassertechnik GmbH](https://www.watercryst.com)
+- **Community-Beiträge:** [simon42 Forum](https://community.simon42.com/t/curl-in-rest-sensor-wandeln/24438), [Loxone Forum](https://www.loxforum.com/forum/german/software-konfiguration-programm-und-visualisierung/407346-einbindung-biocut-anlage-in-loxone-via-rest-api)
+- **Inspiration:** [@route662](https://github.com/route662/home-assistant-watercryst-biocat)
 
-MIT License
+---
+
+## 📄 Lizenz
+
+MIT License – siehe [LICENSE](LICENSE)

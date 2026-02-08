@@ -1,115 +1,84 @@
-"""
-Konstanten für die Watercryst BIOCAT Integration.
+"""Konstanten für die Watercryst BIOCAT Integration.
 
-Diese Datei enthält alle zentralen Konstanten, die in der gesamten Integration
-verwendet werden. Keine hardcodierten Strings für die Benutzeroberfläche –
-alle Labels kommen aus den Translation-Dateien.
+API-Dokumentation: https://appapi.watercryst.com/api-v1.yaml
+API-Key Verwaltung: https://app.watercryst.com/Device/
 """
+from __future__ import annotations
 
 from datetime import timedelta
 
-# ============================================================================
-# Grundlegende Integrations-Konstanten
-# ============================================================================
+# Integration Domain
+DOMAIN = "watercryst_biocat"
 
-# Eindeutiger Bezeichner der Integration (muss mit dem Ordnernamen übereinstimmen)
-DOMAIN: str = "watercryst_biocat"
+# API Konfiguration – bestätigt durch offizielle Dokumentation
+API_BASE_URL = "https://appapi.watercryst.com"
+API_HEADER_KEY = "x-api-key"
 
-# Basis-URL der Watercryst Cloud-API
-API_BASE_URL: str = "https://appapi.watercryst.com"
+# API Endpunkte (bestätigt durch Community-Tests und offizielle Doku)
+# GET-Endpunkte für Datenabfrage
+ENDPOINT_MEASUREMENTS = "/v1/measurements/direct"
+ENDPOINT_STATE = "/v1/state"
+ENDPOINT_STATISTICS_DAILY = "/v1/statistics/cumulative/daily"
+ENDPOINT_STATISTICS_DAILY_DIRECT = "/v1/statistics/daily/direct"
+ENDPOINT_STATISTICS_WEEKLY = "/v1/statistics/cumulative/weekly"
+ENDPOINT_STATISTICS_MONTHLY = "/v1/statistics/cumulative/monthly"
 
-# ============================================================================
-# Konfigurationsschlüssel (für ConfigEntry.data)
-# ============================================================================
+# PUT/POST-Endpunkte für Steuerung
+ENDPOINT_ABSENCE_MODE = "/v1/state/absenceMode"
+ENDPOINT_LEAKAGE_PROTECTION = "/v1/state/leakageProtection"
+ENDPOINT_WATER_SUPPLY = "/v1/waterSupply"
+ENDPOINT_SELFTEST = "/v1/selftest"
+ENDPOINT_ACKNOWLEDGE_WARNING = "/v1/state/acknowledge"
 
-CONF_USERNAME: str = "username"
-CONF_PASSWORD: str = "password"
-CONF_TOKEN: str = "access_token"
-CONF_REFRESH_TOKEN: str = "refresh_token"
-CONF_DEVICE_ID: str = "device_id"
+# Update Intervall (Sekunden) – versetzt um DoS zu vermeiden
+# Hinweis: Watercryst API verträgt keine gleichzeitigen Requests
+UPDATE_INTERVAL_MEASUREMENTS = timedelta(seconds=30)
+UPDATE_INTERVAL_STATE = timedelta(seconds=15)
+UPDATE_INTERVAL_STATISTICS = timedelta(seconds=60)
 
-# ============================================================================
-# Plattformen, die diese Integration registriert
-# ============================================================================
+# Config Flow Schlüssel
+CONF_API_KEY = "api_key"
+CONF_POLL_INTERVAL = "poll_interval"
+CONF_DEVICE_NAME = "device_name"
 
-PLATFORMS: list[str] = [
-    "sensor",
-    "binary_sensor",
-    "switch",
-    "button",
-]
+# Default-Werte
+DEFAULT_POLL_INTERVAL = 30
+DEFAULT_DEVICE_NAME = "BIOCAT"
 
-# ============================================================================
-# Update-Intervall für den DataUpdateCoordinator
-# ============================================================================
+# Sensor-Schlüssel (aus /v1/measurements/direct Response)
+SENSOR_WATER_TEMP = "waterTemp"
+SENSOR_PRESSURE = "pressure"
+SENSOR_LAST_TAP_VOLUME = "lastWaterTapVolume"
+SENSOR_LAST_TAP_DURATION = "lastWaterTapDuration"
 
-# Alle 60 Sekunden die API abfragen (vernünftiger Kompromiss zwischen
-# Aktualität und API-Last)
-UPDATE_INTERVAL: timedelta = timedelta(seconds=60)
+# Sensor-Schlüssel (aus /v1/state Response)
+SENSOR_MODE = "mode_name"
+SENSOR_DEVICE_STATE = "device_state"
 
-# ============================================================================
-# API-Endpunkte (relativ zur Basis-URL)
-# ============================================================================
+# Statistik-Schlüssel
+SENSOR_CONSUMPTION_DAILY = "consumption_daily"
+SENSOR_CONSUMPTION_WEEKLY = "consumption_weekly"
+SENSOR_CONSUMPTION_MONTHLY = "consumption_monthly"
 
-ENDPOINT_LOGIN: str = "/auth/login"
-ENDPOINT_REFRESH: str = "/auth/refresh"
-ENDPOINT_DEVICES: str = "/devices"
-ENDPOINT_MEASUREMENTS: str = "/measurements"
-ENDPOINT_STATISTICS: str = "/statistics"
-ENDPOINT_ABSENCE: str = "/absence"
-ENDPOINT_LEAKAGE_PROTECTION: str = "/leakageprotection"
-ENDPOINT_ML_MEASUREMENT: str = "/mlmeasurement"
-ENDPOINT_SELFTEST: str = "/selftest"
-ENDPOINT_WATER_SUPPLY: str = "/watersupply"
-ENDPOINT_ACK_EVENT: str = "/ackevent"
-ENDPOINT_STATE: str = "/state"
-ENDPOINT_WEBHOOKS: str = "/webhooks"
+# Binary Sensor Schlüssel (aus /v1/state Response)
+BINARY_SENSOR_ONLINE = "online"
+BINARY_SENSOR_ABSENCE_MODE = "absence_mode_enabled"
+BINARY_SENSOR_LEAKAGE_DETECTED = "leakage_detected"
+BINARY_SENSOR_ERROR = "error"
+BINARY_SENSOR_WARNING = "warning"
 
-# ============================================================================
-# Sensor-Schlüssel (werden als entity-Keys und für Übersetzungen verwendet)
-# ============================================================================
+# Switch Schlüssel
+SWITCH_ABSENCE_MODE = "absence_mode"
+SWITCH_LEAKAGE_PROTECTION = "leakage_protection"
 
-# Messwert-Sensoren
-SENSOR_WATER_CONSUMPTION: str = "water_consumption"
-SENSOR_WATER_PRESSURE: str = "water_pressure"
-SENSOR_WATER_TEMPERATURE: str = "water_temperature"
-SENSOR_WATER_HARDNESS: str = "water_hardness"
-SENSOR_FLOW_RATE: str = "flow_rate"
-SENSOR_TOTAL_CONSUMPTION: str = "total_consumption"
-SENSOR_DAILY_CONSUMPTION: str = "daily_consumption"
+# Button Schlüssel
+BUTTON_SELFTEST = "selftest"
+BUTTON_ACKNOWLEDGE = "acknowledge_warning"
 
-# Status-Sensoren
-SENSOR_SELFTEST_RESULT: str = "selftest_result"
-SENSOR_SELFTEST_LAST_RUN: str = "selftest_last_run"
-SENSOR_LEAKAGE_LAST_RUN: str = "leakage_last_run"
-SENSOR_ERROR_MESSAGE: str = "error_message"
-SENSOR_DEVICE_STATE: str = "device_state"
+# Plattformen die diese Integration registriert
+PLATFORMS = ["sensor", "binary_sensor", "switch", "button"]
 
-# Statistik-Sensoren
-SENSOR_STAT_WEEKLY: str = "stat_weekly_consumption"
-SENSOR_STAT_MONTHLY: str = "stat_monthly_consumption"
-
-# Binary-Sensoren
-BINARY_SENSOR_ERROR: str = "error_state"
-BINARY_SENSOR_WARNING: str = "warning_state"
-BINARY_SENSOR_LEAKAGE_DETECTED: str = "leakage_detected"
-BINARY_SENSOR_CONNECTIVITY: str = "connectivity"
-
-# Switches
-SWITCH_ABSENCE: str = "absence_mode"
-SWITCH_LEAKAGE_PROTECTION: str = "leakage_protection"
-
-# Buttons
-BUTTON_ACK_WARNING: str = "acknowledge_warning"
-BUTTON_START_SELFTEST: str = "start_selftest"
-
-# ============================================================================
-# Geräte-Informationen
-# ============================================================================
-
-MANUFACTURER: str = "Watercryst"
-MODEL: str = "BIOCAT"
-DEVICE_IMAGE_URL: str = (
-    "https://assets.heizung-billiger.de/images/watercryst/"
-    "large_default/large_default-12000273_B_.jpg@webp"
-)
+# Referenz-URLs
+URL_API_DOCS = "https://appapi.watercryst.com"
+URL_API_KEY_MANAGEMENT = "https://app.watercryst.com/Device/"
+URL_WATERCRYST = "https://www.watercryst.com"
