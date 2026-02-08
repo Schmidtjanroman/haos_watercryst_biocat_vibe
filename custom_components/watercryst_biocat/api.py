@@ -27,7 +27,8 @@ from .const import (
     ENDPOINT_STATISTICS_DAILY,
     ENDPOINT_STATISTICS_MONTHLY,
     ENDPOINT_STATISTICS_WEEKLY,
-    ENDPOINT_WATER_SUPPLY,
+    ENDPOINT_WATER_SUPPLY_CLOSE,
+    ENDPOINT_WATER_SUPPLY_OPEN,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -357,6 +358,18 @@ class WatercrystApiClient:
             result["error"] = state.get("error", False)
             result["warning"] = state.get("warning", False)
 
+            # Wasserzufuhr-Status (falls in state enthalten)
+            ws = state.get("waterSupply", state.get("watersupply", {}))
+            if isinstance(ws, dict):
+                result["water_supply_open"] = ws.get("open", ws.get("state") == "open")
+            elif isinstance(ws, str):
+                result["water_supply_open"] = ws.lower() == "open"
+            elif isinstance(ws, bool):
+                result["water_supply_open"] = ws
+            else:
+                # Fallback: Nehme an offen wenn kein Status gemeldet
+                result["water_supply_open"] = True
+
         except WatercrystApiError as err:
             _LOGGER.error("Fehler bei State-Abfrage: %s", err)
 
@@ -426,11 +439,18 @@ class WatercrystApiClient:
         _LOGGER.info("Quittiere Warnung/Alarm")
         await self._post(ENDPOINT_ACKNOWLEDGE_WARNING)
 
-    async def async_set_water_supply(self, open_valve: bool) -> None:
-        """Wasserzufuhr öffnen/schließen.
+    async def async_open_water_supply(self) -> None:
+        """Wasserzufuhr öffnen.
 
-        Endpunkt: PUT /v1/waterSupply
+        Endpunkt: POST /v1/watersupply/open
         """
-        action = "open" if open_valve else "close"
-        _LOGGER.info("Setze Wasserzufuhr: %s", action)
-        await self._put(ENDPOINT_WATER_SUPPLY, {"state": action})
+        _LOGGER.info("Öffne Wasserzufuhr")
+        await self._post(ENDPOINT_WATER_SUPPLY_OPEN)
+
+    async def async_close_water_supply(self) -> None:
+        """Wasserzufuhr schließen.
+
+        Endpunkt: POST /v1/watersupply/close
+        """
+        _LOGGER.info("Schließe Wasserzufuhr")
+        await self._post(ENDPOINT_WATER_SUPPLY_CLOSE)

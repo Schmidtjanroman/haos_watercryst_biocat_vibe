@@ -26,7 +26,8 @@ ENDPOINT_STATISTICS_MONTHLY = "/v1/statistics/cumulative/monthly"
 # PUT/POST-Endpunkte für Steuerung
 ENDPOINT_ABSENCE_MODE = "/v1/state/absenceMode"
 ENDPOINT_LEAKAGE_PROTECTION = "/v1/state/leakageProtection"
-ENDPOINT_WATER_SUPPLY = "/v1/waterSupply"
+ENDPOINT_WATER_SUPPLY_OPEN = "/v1/watersupply/open"
+ENDPOINT_WATER_SUPPLY_CLOSE = "/v1/watersupply/close"
 ENDPOINT_SELFTEST = "/v1/selftest"
 ENDPOINT_ACKNOWLEDGE_WARNING = "/v1/state/acknowledge"
 
@@ -70,6 +71,7 @@ BINARY_SENSOR_WARNING = "warning"
 # Switch Schlüssel
 SWITCH_ABSENCE_MODE = "absence_mode"
 SWITCH_LEAKAGE_PROTECTION = "leakage_protection"
+SWITCH_WATER_SUPPLY = "water_supply"
 
 # Button Schlüssel
 BUTTON_SELFTEST = "selftest"

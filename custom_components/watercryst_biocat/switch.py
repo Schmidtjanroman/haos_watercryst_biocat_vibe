@@ -24,6 +24,7 @@ from .const import (
     DOMAIN,
     SWITCH_ABSENCE_MODE,
     SWITCH_LEAKAGE_PROTECTION,
+    SWITCH_WATER_SUPPLY,
     URL_WATERCRYST,
 )
 
@@ -53,6 +54,14 @@ SWITCH_DESCRIPTIONS: list[WatercrystSwitchDescription] = [
         value_fn=lambda data: data.get("leakage_protection_enabled"),
         turn_on_fn=lambda client: client.async_set_leakage_protection(True),
         turn_off_fn=lambda client: client.async_set_leakage_protection(False),
+    ),
+    WatercrystSwitchDescription(
+        key=SWITCH_WATER_SUPPLY,
+        translation_key="water_supply",
+        icon="mdi:valve",
+        value_fn=lambda data: data.get("water_supply_open"),
+        turn_on_fn=lambda client: client.async_open_water_supply(),
+        turn_off_fn=lambda client: client.async_close_water_supply(),
     ),
 ]
 

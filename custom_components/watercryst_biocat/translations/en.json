@@ -64,7 +64,8 @@
         },
         "switch": {
             "absence_mode": { "name": "Absence mode" },
-            "leakage_protection": { "name": "Leakage protection" }
+            "leakage_protection": { "name": "Leakage protection" },
+            "water_supply": { "name": "Water supply" }
         },
         "button": {
             "start_selftest": { "name": "Start self-test" },

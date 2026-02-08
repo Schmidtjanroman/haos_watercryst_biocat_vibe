@@ -1,7 +1,7 @@
 # 🚰 Watercryst BIOCAT – Home Assistant Integration
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Version](https://img.shields.io/badge/Version-2.0.0-blue.svg)](https://github.com/Schmidtjanroman/haos_watercryst_biocat_vibe/releases)
+[![Version](https://img.shields.io/badge/Version-2.1.0-blue.svg)](https://github.com/Schmidtjanroman/haos_watercryst_biocat_vibe/releases)
 
 Home Assistant Custom Component zur Überwachung und Steuerung von **Watercryst BIOCAT** Wasseraufbereitungsgeräten über die offizielle REST-API.
 
@@ -30,6 +30,7 @@ Home Assistant Custom Component zur Überwachung und Steuerung von **Watercryst 
 | ⚠️ Binary Sensor | Gerätewarnung | Warnungsstatus |
 | 🔘 Switch | Abwesenheitsmodus | Ein-/Ausschalten |
 | 🛡️ Switch | Leckageschutz | Ein-/Ausschalten |
+| 🚰 Switch | Wasserzufuhr | Ventil öffnen/schließen |
 | ▶️ Button | Selbsttest | Selbsttest starten |
 | ✅ Button | Warnung quittieren | Alarm bestätigen |
 
@@ -105,6 +106,8 @@ Diese Integration nutzt die offizielle Watercryst REST-API:
 | GET | `/v1/statistics/cumulative/monthly` | Monatsverbrauch |
 | PUT | `/v1/state/absenceMode` | Abwesenheitsmodus setzen |
 | PUT | `/v1/state/leakageProtection` | Leckageschutz setzen |
+| POST | `/v1/watersupply/open` | Wasserzufuhr öffnen |
+| POST | `/v1/watersupply/close` | Wasserzufuhr schließen |
 | POST | `/v1/selftest` | Selbsttest starten |
 | POST | `/v1/state/acknowledge` | Warnung quittieren |
 
@@ -120,7 +123,7 @@ custom_components/watercryst_biocat/
 ├── const.py             # Konstanten & API-Endpunkte
 ├── sensor.py            # 8 Sensoren
 ├── binary_sensor.py     # 5 Binary Sensoren
-├── switch.py            # 2 Switches
+├── switch.py            # 3 Switches
 ├── button.py            # 2 Buttons
 ├── manifest.json        # HA Integration Manifest
 ├── strings.json         # Basis-Übersetzungen (Config Flow)
