@@ -1,0 +1,108 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Watercryst BIOCAT Login",
+        "description": "Enter your Watercryst account credentials to connect your BIOCAT device.\n\n![BIOCAT Device]({device_image})",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        },
+        "data_description": {
+          "username": "Your Watercryst account email address",
+          "password": "Your Watercryst account password"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate Watercryst BIOCAT",
+        "description": "Your credentials have expired. Please enter your updated login details.",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid username or password. Please check your credentials.",
+      "cannot_connect": "Unable to connect to the Watercryst API. Please check your internet connection.",
+      "unknown": "An unexpected error occurred. Please try again."
+    },
+    "abort": {
+      "already_configured": "This Watercryst account is already configured.",
+      "reauth_successful": "Re-authentication was successful."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "water_pressure": {
+        "name": "Water Pressure"
+      },
+      "water_temperature": {
+        "name": "Water Temperature"
+      },
+      "water_hardness": {
+        "name": "Water Hardness"
+      },
+      "flow_rate": {
+        "name": "Flow Rate"
+      },
+      "total_consumption": {
+        "name": "Total Water Consumption"
+      },
+      "daily_consumption": {
+        "name": "Daily Water Consumption"
+      },
+      "selftest_result": {
+        "name": "Self-Test Result"
+      },
+      "selftest_last_run": {
+        "name": "Self-Test Last Run"
+      },
+      "leakage_last_run": {
+        "name": "Leakage Protection Last Run"
+      },
+      "device_state": {
+        "name": "Device State"
+      },
+      "error_message": {
+        "name": "Error Message"
+      },
+      "stat_weekly_consumption": {
+        "name": "Weekly Water Consumption"
+      },
+      "stat_monthly_consumption": {
+        "name": "Monthly Water Consumption"
+      }
+    },
+    "binary_sensor": {
+      "error_state": {
+        "name": "Error"
+      },
+      "warning_state": {
+        "name": "Warning"
+      },
+      "leakage_detected": {
+        "name": "Leakage Detected"
+      },
+      "connectivity": {
+        "name": "Device Connectivity"
+      }
+    },
+    "switch": {
+      "absence_mode": {
+        "name": "Absence Mode"
+      },
+      "leakage_protection": {
+        "name": "Leakage Protection"
+      }
+    },
+    "button": {
+      "start_selftest": {
+        "name": "Start Self-Test"
+      },
+      "acknowledge_warning": {
+        "name": "Acknowledge Warning"
+      }
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "domain": "watercryst_biocat",
+  "name": "Watercryst BIOCAT",
+  "codeowners": ["@Schmidtjanroman"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/Schmidtjanroman/haos_watercryst_biocat_vibe",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/Schmidtjanroman/haos_watercryst_biocat_vibe/issues",
+  "requirements": [],
+  "version": "1.0.0"
+}
