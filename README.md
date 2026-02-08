@@ -6,7 +6,7 @@
 Home Assistant Custom Component zur Überwachung und Steuerung von **Watercryst BIOCAT** Wasseraufbereitungsgeräten über die offizielle REST-API.
 
 <p align="center">
-  <img src="custom_components/watercryst_biocat/device.png" alt="Device" width="100%">
+  <img src="custom_components/watercryst_biocat/device.png" alt="Device" width="25%">
 </p>
 
 ---
