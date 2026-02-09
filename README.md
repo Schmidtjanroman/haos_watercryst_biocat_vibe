@@ -5,7 +5,11 @@
 
 Custom Component zur Einbindung von **Watercryst BIOCAT** Wasseraufbereitungsgeräten in Home Assistant.
 
-<img src="https://assets.heizung-billiger.de/images/watercryst/large_default/large_default-12000273_B_.jpg@webp" width="300" alt="BIOCAT Gerät">
+<<<<<<< HEAD
+<p align="center">
+  <img src="custom_components/watercryst_biocat/device.png" alt="Device" width="25%">
+</p>
+>>>>>>> 2fdf3e3ed064db7a824e305e75f2c62ecc66f545
 
 ## Funktionen
 
