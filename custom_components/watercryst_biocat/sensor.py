@@ -1,11 +1,13 @@
 """Sensor-Plattform für Watercryst BIOCAT.
 
-Sensoren basierend auf den echten API-Endpunkten:
+Sensoren:
 - /v1/measurements/direct → waterTemp, pressure, lastWaterTapVolume, lastWaterTapDuration
 - /v1/statistics/cumulative/daily → Tagesverbrauch
-- /v1/statistics/cumulative/weekly → Wochenverbrauch
-- /v1/statistics/cumulative/monthly → Monatsverbrauch
-- /v1/state → mode.name (Betriebsmodus)
+- /v1/statistics/cumulative/total → Gesamtverbrauch (⚠️ zu verifizieren)
+- /v1/state → mode.name, Timestamps (falls vorhanden)
+
+Wochen-/Monatsverbrauch wurde in v3.0.0 entfernt.
+HA berechnet diese automatisch im Energie-Dashboard.
 """
 from __future__ import annotations
 
@@ -36,8 +38,9 @@ from .const import (
     DEFAULT_DEVICE_NAME,
     DOMAIN,
     SENSOR_CONSUMPTION_DAILY,
-    SENSOR_CONSUMPTION_MONTHLY,
-    SENSOR_CONSUMPTION_WEEKLY,
+    SENSOR_CONSUMPTION_TOTAL,
+    SENSOR_LAST_LEAKAGE_TEST,
+    SENSOR_LAST_SELFTEST,
     SENSOR_LAST_TAP_DURATION,
     SENSOR_LAST_TAP_VOLUME,
     SENSOR_MODE,
@@ -54,7 +57,6 @@ class WatercrystSensorDescription(SensorEntityDescription):
     value_fn: Callable[[dict[str, Any]], Any]
 
 
-# Sensor-Definitionen basierend auf echten API-Antworten
 SENSOR_DESCRIPTIONS: list[WatercrystSensorDescription] = [
     # ─── Aus /v1/measurements/direct ─────────────────────────────────
     WatercrystSensorDescription(
@@ -93,7 +95,7 @@ SENSOR_DESCRIPTIONS: list[WatercrystSensorDescription] = [
         suggested_display_precision=0,
         value_fn=lambda data: data.get("lastWaterTapDuration"),
     ),
-    # ─── Aus /v1/statistics/cumulative/* ──────────────────────────────
+    # ─── Statistik ───────────────────────────────────────────────────
     WatercrystSensorDescription(
         key=SENSOR_CONSUMPTION_DAILY,
         translation_key="consumption_daily",
@@ -104,22 +106,13 @@ SENSOR_DESCRIPTIONS: list[WatercrystSensorDescription] = [
         value_fn=lambda data: data.get("consumption_daily"),
     ),
     WatercrystSensorDescription(
-        key=SENSOR_CONSUMPTION_WEEKLY,
-        translation_key="consumption_weekly",
+        key=SENSOR_CONSUMPTION_TOTAL,
+        translation_key="consumption_total",
         native_unit_of_measurement=UnitOfVolume.LITERS,
         device_class=SensorDeviceClass.WATER,
-        state_class=SensorStateClass.TOTAL,
-        suggested_display_precision=1,
-        value_fn=lambda data: data.get("consumption_weekly"),
-    ),
-    WatercrystSensorDescription(
-        key=SENSOR_CONSUMPTION_MONTHLY,
-        translation_key="consumption_monthly",
-        native_unit_of_measurement=UnitOfVolume.LITERS,
-        device_class=SensorDeviceClass.WATER,
-        state_class=SensorStateClass.TOTAL,
+        state_class=SensorStateClass.TOTAL_INCREASING,
         suggested_display_precision=0,
-        value_fn=lambda data: data.get("consumption_monthly"),
+        value_fn=lambda data: data.get("consumption_total"),
     ),
     # ─── Aus /v1/state ───────────────────────────────────────────────
     WatercrystSensorDescription(
@@ -127,6 +120,21 @@ SENSOR_DESCRIPTIONS: list[WatercrystSensorDescription] = [
         translation_key="operation_mode",
         device_class=SensorDeviceClass.ENUM,
         value_fn=lambda data: data.get("mode_name"),
+    ),
+    # ─── Timestamps (aus /v1/state, falls vorhanden) ────────────────
+    WatercrystSensorDescription(
+        key=SENSOR_LAST_LEAKAGE_TEST,
+        translation_key="last_leakage_test",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:water-check",
+        value_fn=lambda data: data.get("last_leakage_test"),
+    ),
+    WatercrystSensorDescription(
+        key=SENSOR_LAST_SELFTEST,
+        translation_key="last_selftest",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:test-tube",
+        value_fn=lambda data: data.get("last_selftest"),
     ),
 ]
 

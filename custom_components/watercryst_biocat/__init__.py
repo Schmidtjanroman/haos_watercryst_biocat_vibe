@@ -12,7 +12,6 @@ import logging
 from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -35,18 +34,11 @@ type WatercrystConfigEntry = ConfigEntry
 async def async_setup_entry(
     hass: HomeAssistant, entry: WatercrystConfigEntry
 ) -> bool:
-    """Integration über Config Entry einrichten.
-
-    Erstellt den API-Client und DataUpdateCoordinator,
-    führt den ersten Daten-Abruf durch und richtet alle
-    Entitäts-Plattformen ein.
-    """
-    # API-Client erstellen
+    """Integration über Config Entry einrichten."""
     session = async_get_clientsession(hass)
     api_key = entry.data[CONF_API_KEY]
     client = WatercrystApiClient(session=session, api_key=api_key)
 
-    # API-Key Validierung
     try:
         valid = await client.async_validate_api_key()
         if not valid:
@@ -61,10 +53,8 @@ async def async_setup_entry(
             f"Verbindung zur Watercryst API fehlgeschlagen: {err}"
         ) from err
 
-    # Poll-Intervall aus Optionen oder Default
     poll_interval = entry.options.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
 
-    # DataUpdateCoordinator erstellen
     coordinator = WatercrystDataCoordinator(
         hass=hass,
         client=client,
@@ -72,17 +62,12 @@ async def async_setup_entry(
         entry=entry,
     )
 
-    # Erster Daten-Abruf
     await coordinator.async_config_entry_first_refresh()
 
-    # Im hass.data speichern
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
-    # Plattformen einrichten
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
-    # Options-Update Listener registrieren
     entry.async_on_unload(entry.add_update_listener(async_update_options))
 
     return True
@@ -106,13 +91,7 @@ async def async_update_options(
 
 
 class WatercrystDataCoordinator(DataUpdateCoordinator):
-    """Koordinator für die zentrale Datenabfrage.
-
-    Fragt alle API-Endpunkte in einem Zyklus ab und stellt
-    die kombinierten Daten allen Entitäten bereit.
-    Zwischen den einzelnen API-Aufrufen wird automatisch
-    eine Pause eingehalten (siehe api.py API_REQUEST_DELAY).
-    """
+    """Koordinator für die zentrale Datenabfrage."""
 
     def __init__(
         self,
@@ -132,19 +111,13 @@ class WatercrystDataCoordinator(DataUpdateCoordinator):
         self.entry = entry
 
     async def _async_update_data(self) -> dict:
-        """Alle Daten von der API abrufen.
-
-        Raises:
-            ConfigEntryAuthFailed: Bei ungültigem API-Key
-            UpdateFailed: Bei sonstigen API-Fehlern
-        """
+        """Alle Daten von der API abrufen."""
         try:
             data = await self.client.async_get_all_data()
             _LOGGER.debug("Daten empfangen: %s", list(data.keys()))
             return data
 
         except WatercrystAuthError as err:
-            # Triggert Re-Auth Flow in der HA UI
             raise ConfigEntryAuthFailed(
                 "API-Key ungültig. Bitte unter "
                 "https://app.watercryst.com/Device/ prüfen."

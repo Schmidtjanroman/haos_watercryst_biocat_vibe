@@ -2,7 +2,6 @@
 
 Der Benutzer gibt seinen API-Key ein, der unter
 https://app.watercryst.com/Device/ erstellt wurde.
-Der Key wird validiert bevor die Integration eingerichtet wird.
 """
 from __future__ import annotations
 
@@ -28,7 +27,6 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-# Schema für die API-Key Eingabe
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_API_KEY): str,
@@ -36,7 +34,6 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
     }
 )
 
-# Schema für die Re-Authentifizierung
 STEP_REAUTH_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_API_KEY): str,
@@ -45,31 +42,23 @@ STEP_REAUTH_DATA_SCHEMA = vol.Schema(
 
 
 class WatercrystBiocatConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Config Flow für Watercryst BIOCAT.
-
-    Ablauf:
-    1. Benutzer gibt API-Key ein (von app.watercryst.com/Device/)
-    2. Key wird durch API-Aufruf validiert
-    3. Bei Erfolg wird die Integration eingerichtet
-    """
+    """Config Flow für Watercryst BIOCAT."""
 
     VERSION = 1
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Schritt 1: API-Key Eingabe durch den Benutzer."""
+        """Schritt 1: API-Key Eingabe."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
             api_key = user_input[CONF_API_KEY].strip()
             device_name = user_input.get(CONF_DEVICE_NAME, DEFAULT_DEVICE_NAME)
 
-            # Prüfe ob dieser API-Key bereits konfiguriert ist
             await self.async_set_unique_id(api_key[:8])
             self._abort_if_unique_id_configured()
 
-            # API-Key validieren
             try:
                 session = async_get_clientsession(self.hass)
                 client = WatercrystApiClient(session=session, api_key=api_key)
@@ -92,7 +81,7 @@ class WatercrystBiocatConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "invalid_auth"
             except WatercrystApiError:
                 errors["base"] = "cannot_connect"
-            except Exception:  # pylint: disable=broad-except
+            except Exception:
                 _LOGGER.exception("Unerwarteter Fehler im Config Flow")
                 errors["base"] = "unknown"
 
@@ -108,7 +97,7 @@ class WatercrystBiocatConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_reauth(
         self, entry_data: dict[str, Any]
     ) -> FlowResult:
-        """Re-Authentifizierung starten (bei ungültigem API-Key)."""
+        """Re-Authentifizierung starten."""
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
@@ -126,14 +115,10 @@ class WatercrystBiocatConfigFlow(ConfigFlow, domain=DOMAIN):
                 valid = await client.async_validate_api_key()
 
                 if valid:
-                    # Bestehenden Config Entry aktualisieren
                     reauth_entry = self._get_reauth_entry()
                     return self.async_update_reload_and_abort(
                         reauth_entry,
-                        data={
-                            **reauth_entry.data,
-                            CONF_API_KEY: api_key,
-                        },
+                        data={**reauth_entry.data, CONF_API_KEY: api_key},
                     )
                 errors["base"] = "invalid_auth"
 
@@ -141,7 +126,7 @@ class WatercrystBiocatConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "invalid_auth"
             except WatercrystApiError:
                 errors["base"] = "cannot_connect"
-            except Exception:  # pylint: disable=broad-except
+            except Exception:
                 _LOGGER.exception("Unerwarteter Fehler bei Re-Auth")
                 errors["base"] = "unknown"
 
@@ -164,10 +149,7 @@ class WatercrystBiocatConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class WatercrystOptionsFlow(OptionsFlow):
-    """Options Flow für Watercryst BIOCAT.
-
-    Ermöglicht die Anpassung des Abfrage-Intervalls.
-    """
+    """Options Flow – Abfrage-Intervall anpassen."""
 
     def __init__(self, config_entry: ConfigEntry) -> None:
         """Initialisierung."""

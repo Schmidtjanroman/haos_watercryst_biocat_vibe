@@ -6,6 +6,12 @@ Dokumentation: https://appapi.watercryst.com/api-v1.yaml
 
 Wichtig: Die API verträgt keine gleichzeitigen Requests.
 Zwischen Abfragen sollten mindestens 2-3 Sekunden liegen.
+
+Änderungen v3.0.0:
+  - weekly/monthly Endpunkte entfernt (HA berechnet das selbst)
+  - /v1/statistics/cumulative/total hinzugefügt (graceful fallback)
+  - Robustes Parsing aller Felder aus /v1/state (Timestamps, Meldungen)
+  - Nur noch 3-4 API-Calls pro Zyklus statt 5
 """
 from __future__ import annotations
 
@@ -25,8 +31,7 @@ from .const import (
     ENDPOINT_SELFTEST,
     ENDPOINT_STATE,
     ENDPOINT_STATISTICS_DAILY,
-    ENDPOINT_STATISTICS_MONTHLY,
-    ENDPOINT_STATISTICS_WEEKLY,
+    ENDPOINT_STATISTICS_TOTAL,
     ENDPOINT_WATER_SUPPLY_CLOSE,
     ENDPOINT_WATER_SUPPLY_OPEN,
 )
@@ -34,7 +39,6 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 # Minimale Pause zwischen API-Aufrufen (Sekunden)
-# Verhindert DoS / 429-Fehler bei der Watercryst API
 API_REQUEST_DELAY = 2.0
 
 
@@ -63,18 +67,14 @@ class WatercrystApiClient:
         api_key: str,
         base_url: str = API_BASE_URL,
     ) -> None:
-        """Initialisierung des API-Clients.
-
-        Args:
-            session: aiohttp ClientSession für HTTP-Requests
-            api_key: Der X-API-KEY von app.watercryst.com/Device/
-            base_url: Basis-URL der API (Standard: https://appapi.watercryst.com)
-        """
+        """Initialisierung des API-Clients."""
         self._session = session
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
         self._last_request_time: float = 0
         self._request_lock = asyncio.Lock()
+        # Flag: total-Endpunkt verfügbar (wird beim ersten 404 deaktiviert)
+        self._total_endpoint_available: bool = True
 
     @property
     def _headers(self) -> dict[str, str]:
@@ -90,11 +90,7 @@ class WatercrystApiClient:
         endpoint: str,
         **kwargs: Any,
     ) -> aiohttp.ClientResponse:
-        """Führt einen API-Request mit Rate-Limiting durch.
-
-        Stellt sicher, dass zwischen Requests mindestens API_REQUEST_DELAY
-        Sekunden vergehen. Dies verhindert HTTP 429 Fehler.
-        """
+        """Führt einen API-Request mit Rate-Limiting durch."""
         async with self._request_lock:
             now = asyncio.get_event_loop().time()
             elapsed = now - self._last_request_time
@@ -125,15 +121,7 @@ class WatercrystApiClient:
                 ) from err
 
     async def _get(self, endpoint: str) -> Any:
-        """GET-Request an die API.
-
-        Returns:
-            JSON-Response als Python-Objekt (dict, list, int, float)
-
-        Raises:
-            WatercrystAuthError: Bei ungültigem API-Key (HTTP 401/403)
-            WatercrystApiError: Bei sonstigen HTTP-Fehlern
-        """
+        """GET-Request an die API."""
         response = await self._throttled_request("get", endpoint)
 
         if response.status in (401, 403):
@@ -143,16 +131,15 @@ class WatercrystApiClient:
             )
 
         if response.status == 429:
-            _LOGGER.warning(
-                "API Rate-Limit erreicht. Erhöhe den Abfrage-Intervall."
-            )
+            _LOGGER.warning("API Rate-Limit erreicht. Erhöhe den Abfrage-Intervall.")
             raise WatercrystApiError("API Rate-Limit erreicht (429)")
+
+        if response.status == 404:
+            raise WatercrystApiError(f"Endpunkt nicht gefunden: {endpoint}")
 
         if response.status != 200:
             text = await response.text()
-            raise WatercrystApiError(
-                f"API-Fehler {response.status}: {text}"
-            )
+            raise WatercrystApiError(f"API-Fehler {response.status}: {text}")
 
         # Manche Endpunkte geben nur eine Zahl zurück (z.B. cumulative/daily)
         content_type = response.headers.get("Content-Type", "")
@@ -180,9 +167,7 @@ class WatercrystApiClient:
 
         if response.status not in (200, 204):
             text = await response.text()
-            raise WatercrystApiError(
-                f"API-Fehler {response.status}: {text}"
-            )
+            raise WatercrystApiError(f"API-Fehler {response.status}: {text}")
 
         if response.status == 204:
             return None
@@ -205,9 +190,7 @@ class WatercrystApiClient:
 
         if response.status not in (200, 201, 204):
             text = await response.text()
-            raise WatercrystApiError(
-                f"API-Fehler {response.status}: {text}"
-            )
+            raise WatercrystApiError(f"API-Fehler {response.status}: {text}")
 
         if response.status == 204:
             return None
@@ -217,35 +200,29 @@ class WatercrystApiClient:
             return await response.json()
         return await response.text()
 
-    # ─── Datenabfrage (GET) ──────────────────────────────────────────────
+    # ─── Datenabfrage (GET) ──────────────────────────────────────────
 
     async def async_validate_api_key(self) -> bool:
-        """Prüft ob der API-Key gültig ist.
-
-        Wird im Config-Flow verwendet um den Key zu validieren.
-        Ruft /v1/state auf – der leichteste Endpunkt.
-        """
+        """Prüft ob der API-Key gültig ist."""
         try:
             await self._get(ENDPOINT_STATE)
             return True
         except WatercrystAuthError:
             return False
         except WatercrystApiError:
-            # Andere Fehler (z.B. Server-Fehler) bedeuten nicht
-            # zwangsläufig dass der Key ungültig ist
             return False
 
     async def async_get_measurements(self) -> dict[str, Any]:
         """Aktuelle Messwerte abrufen.
 
-        Endpunkt: GET /v1/measurements/direct
+        Endpunkt: GET /v1/measurements/direct ✅
 
         Returns:
             {
-                "waterTemp": 12.5,        # Wassertemperatur in °C
-                "pressure": 3.2,          # Wasserdruck in bar
-                "lastWaterTapVolume": 5.3, # Letztes Zapfvolumen in Liter
-                "lastWaterTapDuration": 23 # Letzte Zapfdauer in Sekunden
+                "waterTemp": 12.5,
+                "pressure": 3.2,
+                "lastWaterTapVolume": 5.3,
+                "lastWaterTapDuration": 23
             }
         """
         data = await self._get(ENDPOINT_MEASUREMENTS)
@@ -257,20 +234,18 @@ class WatercrystApiClient:
     async def async_get_state(self) -> dict[str, Any]:
         """Gerätezustand abrufen.
 
-        Endpunkt: GET /v1/state
+        Endpunkt: GET /v1/state ✅
 
-        Returns:
-            {
-                "mode": {"name": "Normal"},
-                "online": true,
-                "waterProtection": {
-                    "absenceModeEnabled": false,
-                    "leakageProtectionEnabled": true,
-                    "leakageDetected": false
-                },
-                "error": false,
-                "warning": false
-            }
+        Bestätigte Felder:
+            mode.name, online, waterProtection.{absenceModeEnabled,
+            leakageProtectionEnabled, leakageDetected}, error, warning
+
+        Mögliche weitere Felder (abhängig von Firmware):
+            lastMicroleakageTest, lastSelftest, errorMessage,
+            selftestResult, waterSupply, ...
+
+        Die Methode async_get_all_data() extrahiert alle bekannten
+        UND unbekannten Felder robust.
         """
         data = await self._get(ENDPOINT_STATE)
         if isinstance(data, dict):
@@ -281,7 +256,7 @@ class WatercrystApiClient:
     async def async_get_consumption_daily(self) -> float | None:
         """Täglichen Gesamtverbrauch in Litern abrufen.
 
-        Endpunkt: GET /v1/statistics/cumulative/daily
+        Endpunkt: GET /v1/statistics/cumulative/daily ✅
         Gibt einen einzelnen Zahlenwert zurück (z.B. 109.56).
         """
         data = await self._get(ENDPOINT_STATISTICS_DAILY)
@@ -290,59 +265,68 @@ class WatercrystApiClient:
         _LOGGER.warning("Unerwartete Antwort von daily stats: %s", data)
         return None
 
-    async def async_get_consumption_weekly(self) -> float | None:
-        """Wöchentlichen Gesamtverbrauch in Litern abrufen.
+    async def async_get_consumption_total(self) -> float | None:
+        """Totalen Gesamtverbrauch in Litern abrufen.
 
-        Endpunkt: GET /v1/statistics/cumulative/weekly
+        Endpunkt: GET /v1/statistics/cumulative/total ⚠️
+        Muss gegen die echte API verifiziert werden.
+        Bei 404 wird der Endpunkt für diese Session deaktiviert.
         """
-        data = await self._get(ENDPOINT_STATISTICS_WEEKLY)
-        if isinstance(data, (int, float)):
-            return float(data)
-        return None
+        if not self._total_endpoint_available:
+            return None
 
-    async def async_get_consumption_monthly(self) -> float | None:
-        """Monatlichen Gesamtverbrauch in Litern abrufen.
+        try:
+            data = await self._get(ENDPOINT_STATISTICS_TOTAL)
+            if isinstance(data, (int, float)):
+                return float(data)
+            _LOGGER.warning("Unerwartete Antwort von total stats: %s", data)
+            return None
+        except WatercrystApiError as err:
+            if "nicht gefunden" in str(err) or "404" in str(err):
+                _LOGGER.info(
+                    "Endpunkt %s nicht verfügbar – wird deaktiviert. "
+                    "Prüfe https://appapi.watercryst.com/api-v1.yaml",
+                    ENDPOINT_STATISTICS_TOTAL,
+                )
+                self._total_endpoint_available = False
+                return None
+            raise
 
-        Endpunkt: GET /v1/statistics/cumulative/monthly
-        """
-        data = await self._get(ENDPOINT_STATISTICS_MONTHLY)
-        if isinstance(data, (int, float)):
-            return float(data)
-        return None
-
-    # ─── Alle Daten in einem Durchlauf abrufen ───────────────────────────
+    # ─── Alle Daten in einem Durchlauf abrufen ───────────────────────
 
     async def async_get_all_data(self) -> dict[str, Any]:
         """Ruft alle Datenquellen ab und kombiniert sie.
 
-        Zwischen den Requests liegt automatisch eine Pause
-        um die API nicht zu überlasten.
-
-        Returns:
-            Kombiniertes Dict mit allen Sensor-Daten
+        v3.0.0: Nur noch 3-4 API-Calls pro Zyklus:
+          1. measurements (waterTemp, pressure, ...)
+          2. state (mode, online, waterProtection, timestamps, ...)
+          3. statistics/cumulative/daily
+          4. statistics/cumulative/total (optional, graceful fallback)
         """
         result: dict[str, Any] = {}
 
-        # 1. Messwerte (waterTemp, pressure, lastWaterTapVolume, lastWaterTapDuration)
+        # 1. Messwerte
         try:
             measurements = await self.async_get_measurements()
             result.update(measurements)
         except WatercrystApiError as err:
             _LOGGER.error("Fehler bei Messwerte-Abfrage: %s", err)
 
-        # 2. Gerätezustand (mode, online, waterProtection)
+        # 2. Gerätezustand – ROBUSTES PARSING aller Felder
         try:
             state = await self.async_get_state()
-            result["state"] = state
+            result["state_raw"] = state
 
-            # Flache Schlüssel für einfachen Zugriff
+            # Mode
             if "mode" in state and isinstance(state["mode"], dict):
                 result["mode_name"] = state["mode"].get("name", "Unbekannt")
             elif "mode" in state:
                 result["mode_name"] = str(state["mode"])
 
+            # Online-Status
             result["online"] = state.get("online", False)
 
+            # Water Protection Block
             wp = state.get("waterProtection", {})
             if isinstance(wp, dict):
                 result["absence_mode_enabled"] = wp.get(
@@ -355,20 +339,71 @@ class WatercrystApiClient:
                     "leakageDetected", False
                 )
 
+            # Fehler & Warnungen
             result["error"] = state.get("error", False)
             result["warning"] = state.get("warning", False)
 
-            # Wasserzufuhr-Status (falls in state enthalten)
+            # ─── Zusätzliche Felder (firmwareabhängig) ───────────
+            # Fehlermeldung als Text
+            for key in ("errorMessage", "error_message", "errorText"):
+                if key in state and state[key]:
+                    result["error_message"] = str(state[key])
+                    break
+
+            # Selbsttest-Ergebnis
+            for key in ("selftestResult", "selftest_result", "lastSelftestResult"):
+                if key in state and state[key]:
+                    result["selftest_result"] = str(state[key])
+                    break
+
+            # Letzte Leckageprüfung (Timestamp)
+            for key in (
+                "lastMicroleakageTest",
+                "lastLeakageTest",
+                "lastMicroLeakageTest",
+                "microleakageTest",
+            ):
+                if key in state and state[key]:
+                    result["last_leakage_test"] = str(state[key])
+                    break
+
+            # Letzter Selbsttest (Timestamp)
+            for key in ("lastSelftest", "lastSelfTest", "selftest"):
+                if key in state and state[key]:
+                    result["last_selftest"] = str(state[key])
+                    break
+
+            # Wasserzufuhr-Status
             ws = state.get("waterSupply", state.get("watersupply", {}))
             if isinstance(ws, dict):
-                result["water_supply_open"] = ws.get("open", ws.get("state") == "open")
+                ws_state = ws.get("state", ws.get("status", ""))
+                result["water_supply_open"] = str(ws_state).lower() in (
+                    "open", "opened", "true", "1",
+                )
             elif isinstance(ws, str):
-                result["water_supply_open"] = ws.lower() == "open"
+                result["water_supply_open"] = ws.lower() in (
+                    "open", "opened", "true",
+                )
             elif isinstance(ws, bool):
                 result["water_supply_open"] = ws
-            else:
-                # Fallback: Nehme an offen wenn kein Status gemeldet
-                result["water_supply_open"] = True
+
+            # Log alle unbekannten Top-Level Felder zur Analyse
+            known_keys = {
+                "mode", "online", "waterProtection", "error", "warning",
+                "errorMessage", "error_message", "errorText",
+                "selftestResult", "selftest_result", "lastSelftestResult",
+                "lastMicroleakageTest", "lastLeakageTest",
+                "lastMicroLeakageTest", "microleakageTest",
+                "lastSelftest", "lastSelfTest", "selftest",
+                "waterSupply", "watersupply",
+            }
+            unknown = set(state.keys()) - known_keys
+            if unknown:
+                _LOGGER.info(
+                    "Unbekannte Felder in /v1/state: %s – "
+                    "Bitte melde diese im GitHub-Issue!",
+                    {k: state[k] for k in unknown},
+                )
 
         except WatercrystApiError as err:
             _LOGGER.error("Fehler bei State-Abfrage: %s", err)
@@ -381,76 +416,44 @@ class WatercrystApiClient:
         except WatercrystApiError as err:
             _LOGGER.debug("Fehler bei Tagesverbrauch: %s", err)
 
-        # 4. Wochenverbrauch
+        # 4. Gesamtverbrauch (optional, graceful fallback)
         try:
-            weekly = await self.async_get_consumption_weekly()
-            if weekly is not None:
-                result["consumption_weekly"] = weekly
+            total = await self.async_get_consumption_total()
+            if total is not None:
+                result["consumption_total"] = total
         except WatercrystApiError as err:
-            _LOGGER.debug("Fehler bei Wochenverbrauch: %s", err)
-
-        # 5. Monatsverbrauch
-        try:
-            monthly = await self.async_get_consumption_monthly()
-            if monthly is not None:
-                result["consumption_monthly"] = monthly
-        except WatercrystApiError as err:
-            _LOGGER.debug("Fehler bei Monatsverbrauch: %s", err)
+            _LOGGER.debug("Fehler bei Gesamtverbrauch: %s", err)
 
         return result
 
-    # ─── Steuerung (PUT/POST) ────────────────────────────────────────────
+    # ─── Steuerung (PUT/POST) ────────────────────────────────────────
 
     async def async_set_absence_mode(self, enabled: bool) -> None:
-        """Abwesenheitsmodus aktivieren/deaktivieren.
-
-        Endpunkt: PUT /v1/state/absenceMode
-        """
+        """Abwesenheitsmodus aktivieren/deaktivieren."""
         _LOGGER.info("Setze Abwesenheitsmodus: %s", enabled)
         await self._put(ENDPOINT_ABSENCE_MODE, {"enabled": enabled})
 
     async def async_set_leakage_protection(self, enabled: bool) -> None:
-        """Leckageschutz aktivieren/deaktivieren.
-
-        Endpunkt: PUT /v1/state/leakageProtection
-
-        WARNUNG: Bei Deaktivierung ist das Gebäude nicht
-        mehr vor Leckagen geschützt!
-        """
+        """Leckageschutz aktivieren/deaktivieren."""
         _LOGGER.info("Setze Leckageschutz: %s", enabled)
         await self._put(ENDPOINT_LEAKAGE_PROTECTION, {"enabled": enabled})
 
-    async def async_start_selftest(self) -> None:
-        """Selbsttest starten.
-
-        Endpunkt: POST /v1/selftest
-        """
-        _LOGGER.info("Starte Selbsttest")
-        await self._post(ENDPOINT_SELFTEST)
-
-    async def async_acknowledge_warning(self) -> None:
-        """Warnung/Leckagealarm quittieren.
-
-        Endpunkt: POST /v1/state/acknowledge
-
-        WARNUNG: Vergewissern Sie sich vor dem Quittieren,
-        dass die Ursache des Alarms beseitigt wurde!
-        """
-        _LOGGER.info("Quittiere Warnung/Alarm")
-        await self._post(ENDPOINT_ACKNOWLEDGE_WARNING)
-
     async def async_open_water_supply(self) -> None:
-        """Wasserzufuhr öffnen.
-
-        Endpunkt: POST /v1/watersupply/open
-        """
+        """Wasserzufuhr öffnen."""
         _LOGGER.info("Öffne Wasserzufuhr")
         await self._post(ENDPOINT_WATER_SUPPLY_OPEN)
 
     async def async_close_water_supply(self) -> None:
-        """Wasserzufuhr schließen.
-
-        Endpunkt: POST /v1/watersupply/close
-        """
+        """Wasserzufuhr schließen."""
         _LOGGER.info("Schließe Wasserzufuhr")
         await self._post(ENDPOINT_WATER_SUPPLY_CLOSE)
+
+    async def async_start_selftest(self) -> None:
+        """Selbsttest starten."""
+        _LOGGER.info("Starte Selbsttest")
+        await self._post(ENDPOINT_SELFTEST)
+
+    async def async_acknowledge_warning(self) -> None:
+        """Warnung/Leckagealarm quittieren."""
+        _LOGGER.info("Quittiere Warnung/Alarm")
+        await self._post(ENDPOINT_ACKNOWLEDGE_WARNING)

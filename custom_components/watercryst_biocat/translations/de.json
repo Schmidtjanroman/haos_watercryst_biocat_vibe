@@ -3,32 +3,27 @@
         "step": {
             "user": {
                 "title": "Watercryst BIOCAT einrichten",
-                "description": "Gib deinen API-Key ein. Diesen findest du unter {api_key_url}",
+                "description": "API-Key eingeben.\nErstelle deinen Key unter: {api_key_url}",
                 "data": {
                     "api_key": "API-Key",
                     "device_name": "Gerätename"
-                },
-                "data_description": {
-                    "api_key": "Den API-Key findest du unter app.watercryst.com/Device/",
-                    "device_name": "Frei wählbarer Name für das Gerät"
                 }
             },
             "reauth_confirm": {
-                "title": "Erneute Authentifizierung",
-                "description": "Der API-Key ist ungültig. Bitte gib einen neuen API-Key ein. Diesen findest du unter {api_key_url}",
+                "title": "Erneut authentifizieren",
+                "description": "Der API-Key ist ungültig.\nBitte neuen Key eingeben von: {api_key_url}",
                 "data": {
                     "api_key": "Neuer API-Key"
                 }
             }
         },
         "error": {
-            "invalid_auth": "Ungültiger API-Key. Bitte unter app.watercryst.com/Device/ prüfen.",
-            "cannot_connect": "Verbindung zur Watercryst API fehlgeschlagen.",
-            "unknown": "Unbekannter Fehler."
+            "invalid_auth": "Ungültiger API-Key",
+            "cannot_connect": "Verbindung zur API fehlgeschlagen",
+            "unknown": "Unbekannter Fehler"
         },
         "abort": {
-            "already_configured": "Dieses Gerät ist bereits konfiguriert.",
-            "reauth_successful": "API-Key erfolgreich aktualisiert."
+            "already_configured": "Dieses Gerät ist bereits konfiguriert"
         }
     },
     "options": {
@@ -37,9 +32,6 @@
                 "title": "Einstellungen",
                 "data": {
                     "poll_interval": "Abfrage-Intervall (Sekunden)"
-                },
-                "data_description": {
-                    "poll_interval": "Wie oft sollen die Daten abgefragt werden? (10-300 Sekunden, Standard: 30)"
                 }
             }
         }
@@ -51,16 +43,17 @@
             "last_tap_volume": { "name": "Letztes Zapfvolumen" },
             "last_tap_duration": { "name": "Letzte Zapfdauer" },
             "consumption_daily": { "name": "Tagesverbrauch" },
-            "consumption_weekly": { "name": "Wochenverbrauch" },
-            "consumption_monthly": { "name": "Monatsverbrauch" },
-            "operation_mode": { "name": "Betriebsmodus" }
+            "consumption_total": { "name": "Gesamtverbrauch" },
+            "operation_mode": { "name": "Betriebsmodus" },
+            "last_leakage_test": { "name": "Letzte Leckageprüfung" },
+            "last_selftest": { "name": "Letzter Selbsttest" }
         },
         "binary_sensor": {
-            "device_online": { "name": "Gerät online" },
+            "device_online": { "name": "Verbindung" },
             "absence_mode_active": { "name": "Abwesenheitsmodus aktiv" },
             "leakage_detected": { "name": "Leckage erkannt" },
-            "device_error": { "name": "Gerätefehler" },
-            "device_warning": { "name": "Gerätewarnung" }
+            "device_error": { "name": "Fehler" },
+            "device_warning": { "name": "Warnung" }
         },
         "switch": {
             "absence_mode": { "name": "Abwesenheitsmodus" },

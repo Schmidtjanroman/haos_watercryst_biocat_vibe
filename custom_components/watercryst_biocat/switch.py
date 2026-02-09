@@ -3,6 +3,7 @@
 Schalter für:
 - Abwesenheitsmodus (PUT /v1/state/absenceMode)
 - Leckageschutz (PUT /v1/state/leakageProtection)
+- Wasserzufuhr (POST /v1/watersupply/open bzw. /close)
 """
 from __future__ import annotations
 
